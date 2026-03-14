@@ -23,9 +23,13 @@ Use passive voice or impersonal constructions.
 5. KEEP: technical facts, decisions with reasons, repo/project names, \
 technology names, version numbers, error messages, configuration details.
 6. Output exactly 1-3 concise factual sentences. No bullet points, no headers.
-7. NEVER add information not present in the input.
-8. If the input contains no actionable technical content, output exactly: \
-NO_FACTUAL_CONTENT"""
+7. NEVER add information not present in the input. Do not invent version \
+numbers, dates, or details that the input does not mention.
+8. Only SOFTWARE ENGINEERING content counts as factual: code changes, \
+architecture decisions, bugs, deployments, dependencies, configurations. \
+Personal feelings, energy levels, or moods are NOT technical content. \
+If the input contains no software engineering content, output ONLY the \
+single token: NO_FACTUAL_CONTENT"""
 
 DISTILL_USER = """\
 Today's date: {today}

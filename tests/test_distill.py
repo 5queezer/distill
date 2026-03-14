@@ -97,7 +97,9 @@ async def test_preserves_error_info(distiller: OllamaDistiller) -> None:
 async def test_short_output(distiller: OllamaDistiller) -> None:
     raw = "Switched the logging library from loguru to structlog."
     out = await distiller.distill(raw)
-    sentences = [s.strip() for s in re.split(r"[.!?]+", out) if s.strip()]
+    # Split on sentence-ending punctuation followed by space or end-of-string,
+    # avoiding splits inside version numbers like "2.1.3"
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", out) if s.strip()]
     assert len(sentences) <= 3, f"Output too long ({len(sentences)} sentences): {out}"
 
 
