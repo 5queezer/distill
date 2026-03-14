@@ -44,7 +44,7 @@ ignore = [
 known-first-party = ["distill_mcp"]
 
 # --- ty (Astral) ---
-[tool.ty]
+[tool.ty.environment]
 python-version = "3.11"
 
 # --- pytest ---
