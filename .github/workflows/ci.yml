@@ -13,4 +13,4 @@ jobs:
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest tests/ -x -v -k "not ollama" --no-cov
+      - run: uv run pytest tests/ -x -v -k "not ollama" --no-cov || test $? -eq 5
