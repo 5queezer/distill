@@ -156,12 +156,36 @@ The distillation prompt must:
 ## Build & run
 
 ```bash
-pip install -e ".[dev]"          # install with dev deps
+uv sync                          # install all deps
 python -m distill_mcp            # run server (stdio)
-pytest tests/                    # run tests
+uv run pytest tests/             # run tests (Ollama tests auto-skip if not running)
 fastmcp dev src/distill_mcp/server.py  # test with MCP inspector
 fastmcp install claude-code src/distill_mcp/server.py  # install in Claude Code
 ```
+
+## Development workflow
+
+Every code change follows this sequence. Do not skip steps.
+
+1. **Branch** — Create a feature branch from `main`: `git checkout -b feat/<name> main` or `git checkout -b fix/<name> main`.
+2. **Code** — Make changes. Keep commits small and focused.
+3. **Commit** — `git commit`. Pre-commit hooks run automatically:
+   - trailing-whitespace, end-of-file-fixer, check-yaml, check-toml
+   - no-commit-to-branch (blocks direct commits to `main`)
+   - validate-pyproject
+   - ruff (lint + auto-fix) and ruff-format
+   - ty (type check via `uvx ty check src/`)
+   - gitleaks (secret scanning)
+   If any hook fails: fix the issue, re-stage, and commit again (new commit, do not amend).
+4. **Push** — `git push -u origin <branch>`. Pre-push hook runs `uv run pytest` (including coverage).
+5. **PR** — Open a pull request against `main`.
+6. **CI** — GitHub Actions runs on every push and PR (`.github/workflows/ci.yml`):
+   - `uv run ruff check .`
+   - `uv run ruff format --check .`
+   - `uv run pytest tests/ -x -v -k "not ollama" --no-cov`
+   Ollama-dependent tests are marked with `@pytest.mark.ollama` and skipped in CI (no Ollama on Ubuntu runners). They run locally only.
+7. **Green gate** — CI must be green before merging. If CI fails: read the logs, fix locally, push again. Repeat until green.
+8. **Merge** — Squash-merge into `main` via GitHub.
 
 ## What NOT to do
 
