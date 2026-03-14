@@ -15,6 +15,18 @@ if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, SearchResult
 
 
+def rrf_merge(
+    fts_ids: list[str], vec_ids: list[str], k: int = 60
+) -> list[tuple[str, float]]:
+    """Reciprocal Rank Fusion — merge two ranked ID lists into one."""
+    scores: dict[str, float] = {}
+    for rank, mid in enumerate(fts_ids, start=1):
+        scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+    for rank, mid in enumerate(vec_ids, start=1):
+        scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
 class SqliteStore:
     """Local storage backend using SQLite (metadata + FTS5) and LanceDB (vectors)."""
 
@@ -115,7 +127,7 @@ class SqliteStore:
 
         fts_ids = self._fts_search(query_text, top_k * 2)
         vec_ids = self._vec_search(query_vec, top_k * 2)
-        merged = self._rrf_merge(fts_ids, vec_ids)
+        merged = rrf_merge(fts_ids, vec_ids, self._rrf_k)
 
         out: list[SearchResult] = []
         for mid, score in merged:
@@ -209,16 +221,6 @@ class SqliteStore:
     def _sanitize_fts(query: str) -> str:
         words = re.findall(r"\w+", query)
         return " OR ".join(f'"{w}"' for w in words) if words else ""
-
-    def _rrf_merge(
-        self, fts_ids: list[str], vec_ids: list[str]
-    ) -> list[tuple[str, float]]:
-        scores: dict[str, float] = {}
-        for rank, mid in enumerate(fts_ids, start=1):
-            scores[mid] = scores.get(mid, 0.0) + 1.0 / (self._rrf_k + rank)
-        for rank, mid in enumerate(vec_ids, start=1):
-            scores[mid] = scores.get(mid, 0.0) + 1.0 / (self._rrf_k + rank)
-        return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
     @staticmethod
     def _row_to_memory(row: sqlite3.Row) -> Memory:
