@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "team-memory-mcp"
+name = "distill-mcp"
 version = "0.1.0"
 description = "Privacy-first team memory MCP server — local LLM distillation before team sync"
 requires-python = ">=3.11"
@@ -16,10 +16,10 @@ dependencies = [
 ]
 
 [project.scripts]
-team-memory-mcp = "team_memory_mcp.__main__:main"
+distill = "distill_mcp.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/team_memory_mcp"]
+packages = ["src/distill_mcp"]
 
 # --- Ruff ---
 [tool.ruff]
@@ -40,7 +40,7 @@ ignore = [
 "tests/**" = ["S101", "PLR2004"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["team_memory_mcp"]
+known-first-party = ["distill_mcp"]
 
 # --- ty (Astral) ---
 [tool.ty]
@@ -50,11 +50,11 @@ python-version = "3.11"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=src/team_memory_mcp --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=src/distill_mcp --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 branch = true
-source = ["src/team_memory_mcp"]
+source = ["src/distill_mcp"]
 
 [tool.coverage.report]
 fail_under = 80

@@ -1,6 +1,6 @@
 """Entry point — starts the MCP server via stdio."""
 
-from team_memory_mcp.server import mcp
+from distill_mcp.server import mcp
 
 
 def main() -> None:
