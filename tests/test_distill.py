@@ -27,6 +27,7 @@ def _ollama_available() -> bool:
 
 pytestmark = [
     pytest.mark.asyncio,
+    pytest.mark.ollama,
     pytest.mark.skipif(not _ollama_available(), reason="Ollama not running"),
 ]
 
