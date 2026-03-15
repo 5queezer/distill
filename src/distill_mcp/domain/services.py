@@ -10,6 +10,32 @@ if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, SearchResult
     from distill_mcp.domain.ports import DistillerPort, EmbeddingPort, StoragePort
 
+# Noise filter: trivial inputs that should never be stored
+NOISE_PATTERNS = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+        "yes",
+        "no",
+        "sure",
+        "lgtm",
+        "\U0001f44d",
+        "\U0001f44e",
+        "\U0001f64f",
+    }
+)
+MIN_CONTENT_LENGTH = 20
+
+# Search quality thresholds
+MIN_SEARCH_SCORE = 0.35
+RECENCY_WEIGHT = 0.15
+RECENCY_HALFLIFE_DAYS = 30
+
 
 class MemoryService:
     """Core use cases: remember, search, get, update, list_recent, forget."""
@@ -27,6 +53,16 @@ class MemoryService:
         self._distiller = distiller
         self._distill_enabled = distill_enabled
 
+    @staticmethod
+    def _is_noise(text: str) -> str | None:
+        """Return rejection reason if text is noise, None otherwise."""
+        stripped = text.strip()
+        if stripped.lower() in NOISE_PATTERNS:
+            return "Input is trivial (greeting/reaction). Nothing to store."
+        if len(stripped) < MIN_CONTENT_LENGTH:
+            return f"Input too short ({len(stripped)} chars). Minimum {MIN_CONTENT_LENGTH}."
+        return None
+
     async def remember(
         self,
         raw_text: str,
@@ -35,6 +71,11 @@ class MemoryService:
         tags: list[str] | None = None,
     ) -> dict:
         from distill_mcp.domain.models import Memory
+
+        # 0. Noise filter — reject before wasting Ollama cycles
+        noise_reason = self._is_noise(raw_text)
+        if noise_reason:
+            return {"status": "rejected", "reason": noise_reason}
 
         # 1. Distill
         if self._distill_enabled:
@@ -70,7 +111,21 @@ class MemoryService:
         self, query: str, top_k: int = 5, *, repo: str | None = None
     ) -> list[SearchResult]:
         vec = await self._embedder.embed(query)
-        return await self._storage.search(query, vec, top_k, repo=repo)
+        results = await self._storage.search(query, vec, top_k, repo=repo)
+
+        # Recency boost: blend RRF score with recency signal
+        now = datetime.now(UTC)
+        for r in results:
+            age_days = (now - r.memory.created_at).days
+            recency = 1.0 / (1.0 + age_days / RECENCY_HALFLIFE_DAYS)
+            r.score = (1.0 - RECENCY_WEIGHT) * r.score + RECENCY_WEIGHT * recency
+
+        # Hard min score: drop irrelevant results
+        results = [r for r in results if r.score >= MIN_SEARCH_SCORE]
+
+        # Re-sort after recency adjustment
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results
 
     async def get(self, id: str) -> Memory | None:
         return await self._storage.get(id)
