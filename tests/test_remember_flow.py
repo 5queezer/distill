@@ -83,20 +83,27 @@ def _service(
     )
 
 
+_VALID_INPUT = "We chose PostgreSQL over MySQL for pgvector support"
+
+
 async def test_happy_path_calls_distill_embed_dedup_save() -> None:
-    result = await _service().remember("raw input", "decision", ["repo"])
+    result = await _service().remember(_VALID_INPUT, "decision", ["repo"])
     assert result["status"] == "saved"
     assert call_log == ["distill", "embed", "dedup", "save"]
 
 
 async def test_no_factual_content_stops_after_distill() -> None:
-    result = await _service("NO_FACTUAL_CONTENT").remember("mood log", "context", ["r"])
+    result = await _service("NO_FACTUAL_CONTENT").remember(
+        _VALID_INPUT, "context", ["r"]
+    )
     assert result["status"] == "rejected"
     assert call_log == ["distill"]
 
 
 async def test_duplicate_stops_before_save() -> None:
-    result = await _service(dup_id="existing-123").remember("dup", "decision", ["r"])
+    result = await _service(dup_id="existing-123").remember(
+        _VALID_INPUT, "decision", ["r"]
+    )
     assert result["status"] == "duplicate"
     assert call_log == ["distill", "embed", "dedup"]
     assert "save" not in call_log
