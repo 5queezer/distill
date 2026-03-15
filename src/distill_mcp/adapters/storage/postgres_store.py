@@ -324,8 +324,12 @@ class PostgresStore:
     def _row_to_memory(row: asyncpg.Record) -> Memory:
         from distill_mcp.domain.models import Memory
 
-        repos = row["repos"] if isinstance(row["repos"], list) else json.loads(row["repos"])
-        tags = row["tags"] if isinstance(row["tags"], list) else json.loads(row["tags"])
+        repos = (
+            row["repos"] if isinstance(row["repos"], list) else json.loads(row["repos"])
+        )
+        tags = (
+            row["tags"] if isinstance(row["tags"], list) else json.loads(row["tags"])
+        )
 
         return Memory(
             id=row["id"],
