@@ -9,12 +9,25 @@ if TYPE_CHECKING:
 
 
 class StoragePort(Protocol):
-    async def save(self, memory: Memory) -> str: ...
+    async def save(
+        self, memory: Memory, vec: list[float], *, supersedes: str | None = None
+    ) -> str: ...
     async def get(self, id: str) -> Memory | None: ...
     async def search(
         self, query_text: str, query_vec: list[float], top_k: int
     ) -> list[SearchResult]: ...
     async def delete(self, id: str) -> None: ...
+    async def list_recent(
+        self,
+        *,
+        repo: str | None = None,
+        tag: str | None = None,
+        type: str | None = None,
+        limit: int = 20,
+    ) -> list[Memory]: ...
+    async def check_duplicate(
+        self, vec: list[float], threshold: float = 0.95
+    ) -> str | None: ...
 
 
 class EmbeddingPort(Protocol):

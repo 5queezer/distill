@@ -159,7 +159,7 @@ The distillation prompt must:
 uv sync                          # install all deps
 python -m distill_mcp            # run server (stdio)
 uv run pytest tests/             # run tests (Ollama tests auto-skip if not running)
-fastmcp dev src/distill_mcp/server.py  # test with MCP inspector
+fastmcp dev inspector src/distill_mcp/server.py  # test with MCP inspector
 fastmcp install claude-code src/distill_mcp/server.py  # install in Claude Code
 ```
 
