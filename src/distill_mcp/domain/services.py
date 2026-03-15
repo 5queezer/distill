@@ -48,6 +48,9 @@ RECENCY_WEIGHT = 0.15
 RECENCY_HALFLIFE_DAYS = 30
 ACCESS_BOOST_WEIGHT = 0.1
 
+# Preview TTL in seconds
+PENDING_TTL = 300
+
 
 @dataclass
 class _PendingEntry:
@@ -60,6 +63,7 @@ class _PendingEntry:
     vec: list[float]
     expires_at: datetime
     private_file: Path | None
+    agent_id: str | None = None
 
 
 class MemoryService:
@@ -125,6 +129,7 @@ class MemoryService:
         type: str,
         repos: list[str],
         tags: list[str] | None = None,
+        agent_id: str | None = None,
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
@@ -141,11 +146,15 @@ class MemoryService:
         if self._scanner is not None:
             raw_text, pre_findings = self._scanner.redact(raw_text)
 
-        # 1. Distill
+        # 1. Distill — inject agent_id prefix when present
+        distill_input = raw_text
+        if agent_id is not None:
+            distill_input = f"[Agent: {agent_id}]\n{raw_text}"
+
         if self._distill_enabled:
-            distilled = await self._distiller.distill(raw_text)
+            distilled = await self._distiller.distill(distill_input)
         else:
-            distilled = raw_text
+            distilled = raw_text  # no prefix in stored content when distill off
 
         if "no_factual_content" in distilled.lower().replace(" ", "_"):
             return {"status": "rejected", "reason": "no factual content"}
@@ -176,6 +185,7 @@ class MemoryService:
                 tags=tags or [],
                 author=None,
                 created_at=datetime.now(UTC),
+                agent_id=agent_id,
             )
             saved_id = await self._storage.save(memory, vec)
             return {
@@ -206,6 +216,7 @@ class MemoryService:
             vec=vec,
             expires_at=expires_at,
             private_file=private_file,
+            agent_id=agent_id,
         )
         return {
             "status": "preview",
@@ -259,6 +270,7 @@ class MemoryService:
                 tags=entry.tags,
                 author=None,
                 created_at=datetime.now(UTC),
+                agent_id=entry.agent_id,
             )
             saved_id = await self._storage.save(memory, vec)
         except Exception:
@@ -270,30 +282,33 @@ class MemoryService:
         return {"status": "saved", "id": saved_id, "distilled": final_text}
 
     async def search(
-        self, query: str, top_k: int = 5, *, repo: str | None = None
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]:
         vec = await self._embedder.embed(query)
-        results = await self._storage.search(query, vec, top_k, repo=repo)
+        results = await self._storage.search(
+            query, vec, top_k, repo=repo, agent_id=agent_id
+        )
 
-        # Recency boost: blend RRF score with recency signal
+        # Recency boost
         now = datetime.now(UTC)
         for r in results:
             age_days = (now - r.memory.created_at).days
             recency = 1.0 / (1.0 + age_days / RECENCY_HALFLIFE_DAYS)
             r.score = (1.0 - RECENCY_WEIGHT) * r.score + RECENCY_WEIGHT * recency
 
-        # Access-frequency boost: frequently retrieved memories score higher
+        # Access-frequency boost
         for r in results:
             access_boost = math.log(r.memory.access_count + 1) * ACCESS_BOOST_WEIGHT
             r.score *= 1.0 + access_boost
 
-        # Hard min score: drop irrelevant results
         results = [r for r in results if r.score >= MIN_SEARCH_SCORE]
-
-        # Re-sort after recency + access adjustment
         results.sort(key=lambda r: r.score, reverse=True)
 
-        # Record access (fire-and-forget, non-blocking)
         for r in results:
             task = asyncio.create_task(self._storage.record_access(r.memory.id))
             self._bg_tasks.add(task)
@@ -326,6 +341,7 @@ class MemoryService:
             tags=old.tags,
             author=old.author,
             created_at=datetime.now(UTC),
+            agent_id=old.agent_id,
         )
         await self._storage.save(new_memory, vec, supersedes=id)
         await self._storage.delete(id)
@@ -343,14 +359,20 @@ class MemoryService:
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        agent_id: str | None = None,
     ) -> list[Memory]:
         return await self._storage.list_recent(
-            repo=repo, tag=tag, type=type, limit=limit
+            repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
         )
 
-    async def forget(self, id: str) -> dict:
+    async def forget(self, id: str, *, agent_id: str | None = None) -> dict:
         mem = await self._storage.get(id)
         if not mem:
             return {"status": "not_found"}
+        if agent_id is not None and mem.agent_id != agent_id:
+            return {
+                "status": "forbidden",
+                "reason": "Memory belongs to a different agent",
+            }
         await self._storage.delete(id)
         return {"status": "forgotten", "id": id}
