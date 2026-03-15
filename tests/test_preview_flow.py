@@ -34,7 +34,9 @@ class FakeStorage:
         self._dup_id = dup_id
         self.saved: list[Any] = []
 
-    async def check_duplicate(self, vec: list[float], threshold: float = 0.95) -> str | None:
+    async def check_duplicate(
+        self, vec: list[float], threshold: float = 0.95
+    ) -> str | None:
         return self._dup_id
 
     async def save(self, memory: Any, vec: list[float], **kw: Any) -> str:
