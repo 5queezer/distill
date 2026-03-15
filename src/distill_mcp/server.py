@@ -10,7 +10,40 @@ from fastmcp import FastMCP
 if TYPE_CHECKING:
     from distill_mcp.domain.services import MemoryService
 
-mcp = FastMCP("distill")
+mcp = FastMCP(
+    "distill",
+    instructions="""\
+## Memory Protocol
+
+### Storing — after every correction or decision
+When the user corrects your approach, or when a decision is made after
+discussion, call `remember` to save the learning. Don't ask — just do it.
+
+What to remember:
+- User corrects your approach → remember the correct way
+- Something was tried and failed → remember failure + reason
+- A convention is established → remember the convention
+- You went back and forth → remember the final decision
+
+### Retrieval — MANDATORY before these actions
+ALWAYS call `search_memory` BEFORE:
+- Proposing an architecture or technology choice
+- Creating a new file or module
+- Refactoring existing code
+- Answering "how should we..." or "what's the best way to..."
+- Starting work on a new task or issue
+
+### Retrieval — ALWAYS when user says
+Trigger words that REQUIRE a `search_memory` call:
+- "we decided", "we agreed", "last time", "previously"
+- "remember when", "what was the reason", "why did we"
+- "how do we", "what's our pattern for", "don't we already have"
+
+### Detect loops
+Before suggesting an approach, search memory first.
+If a memory says "tried X, didn't work because Y", don't suggest X again.
+""",
+)
 _service: MemoryService | None = None
 
 
