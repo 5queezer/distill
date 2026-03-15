@@ -85,7 +85,7 @@ class SqliteStore:
         for col, typedef in migrations:
             if col not in existing:
                 # col and typedef are from a hardcoded internal list — no injection risk
-                c.execute(  # noqa: S608
+                c.execute(
                     f"ALTER TABLE memories ADD COLUMN {col} {typedef}"
                 )
         c.commit()
