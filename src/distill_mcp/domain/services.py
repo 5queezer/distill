@@ -166,15 +166,16 @@ class MemoryService:
         """Commit a pending preview to storage."""
         from distill_mcp.domain.models import Memory
 
-        self.cleanup_expired_pending()
-
         entry = self._pending.get(pending_id)
         if entry is None:
             return {"status": "not_found", "pending_id": pending_id}
 
         if entry["expires_at"] <= time.time():
             del self._pending[pending_id]
+            self.cleanup_expired_pending()
             return {"status": "expired", "pending_id": pending_id}
+
+        self.cleanup_expired_pending()
 
         memory: Memory = entry["memory"]
         vec: list[float] = entry["vec"]
