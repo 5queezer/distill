@@ -144,7 +144,7 @@ async def test_distillation_no_prefix_when_no_agent_id() -> None:
 
 
 async def test_search_filters_by_agent_id() -> None:
-    svc, storage, _ = _service()
+    svc, _storage, _ = _service()
     await svc.remember(
         _VALID_INPUT, "decision", ["repo"], agent_id="agent-a"
     )
@@ -157,7 +157,7 @@ async def test_search_filters_by_agent_id() -> None:
 
 
 async def test_search_without_filter_returns_all() -> None:
-    svc, storage, _ = _service()
+    svc, _storage, _ = _service()
     await svc.remember(
         _VALID_INPUT, "decision", ["repo"], agent_id="agent-a"
     )
@@ -213,7 +213,7 @@ async def test_concurrent_writes_from_two_agents() -> None:
 
 async def test_forget_own_memory_succeeds() -> None:
     """An agent can delete its own memory."""
-    svc, storage, _ = _service()
+    svc, _storage, _ = _service()
     result = await svc.remember(
         _VALID_INPUT, "decision", ["repo"], agent_id="agent-a"
     )
@@ -226,7 +226,7 @@ async def test_forget_own_memory_succeeds() -> None:
 
 async def test_forget_other_agents_memory_forbidden() -> None:
     """Agent B cannot delete Agent A's memory."""
-    svc, storage, _ = _service()
+    svc, _storage, _ = _service()
     result = await svc.remember(
         _VALID_INPUT, "decision", ["repo"], agent_id="agent-a"
     )
@@ -241,7 +241,7 @@ async def test_forget_other_agents_memory_forbidden() -> None:
 
 async def test_forget_without_agent_id_always_deletes() -> None:
     """When no agent_id is provided, any memory can be deleted (admin path)."""
-    svc, storage, _ = _service()
+    svc, _storage, _ = _service()
     result = await svc.remember(
         _VALID_INPUT, "decision", ["repo"], agent_id="agent-a"
     )
