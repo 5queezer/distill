@@ -54,7 +54,7 @@ class OllamaDistiller:
         self._host = host
         self._model = model
 
-    async def distill(self, raw_text: str, agent_id: str | None = None) -> str:
+    async def distill(self, raw_text: str) -> str:
         prompt = DISTILL_USER.format(
             today=date.today().isoformat(),
             raw_text=raw_text,

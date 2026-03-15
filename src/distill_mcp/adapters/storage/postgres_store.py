@@ -87,7 +87,7 @@ class PostgresStore:
         self._port = port
         self._database = database
         self._user = user
-        self._password = password
+        self._password=pass*[REDACTED]
         self._min_pool = min_pool
         self._max_pool = max_pool
         self._rrf_k = rrf_k
@@ -109,13 +109,16 @@ class PostgresStore:
                 port=self._port,
                 database=self._database,
                 user=self._user,
-                password=self._password,
+                password=self*[REDACTED],
                 min_size=self._min_pool,
                 max_size=self._max_pool,
                 init=_register_vector,
             )
         async with self._pool.acquire() as conn:
             await conn.execute(_SCHEMA_SQL)
+            await conn.execute(
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS agent_id TEXT"
+            )
         log.info("postgres_store.initialized")
 
     async def close(self) -> None:
@@ -243,7 +246,7 @@ class PostgresStore:
             query += f" AND type = ${idx}"
             params.append(type)
             idx += 1
-        if agent_id:
+        if agent_id is not None:
             query += f" AND agent_id = ${idx}"
             params.append(agent_id)
             idx += 1

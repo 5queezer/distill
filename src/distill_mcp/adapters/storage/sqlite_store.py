@@ -84,7 +84,10 @@ class SqliteStore:
         ]
         for col, typedef in migrations:
             if col not in existing:
-                c.execute(f"ALTER TABLE memories ADD COLUMN {col} {typedef}")
+                # col and typedef are from a hardcoded internal list — no injection risk
+                c.execute(  # noqa: S608
+                    f"ALTER TABLE memories ADD COLUMN {col} {typedef}"
+                )
         c.commit()
 
     # -- StoragePort implementation --
@@ -205,7 +208,7 @@ class SqliteStore:
         if type:
             query += " AND type = ?"
             params.append(type)
-        if agent_id:
+        if agent_id is not None:
             query += " AND agent_id = ?"
             params.append(agent_id)
         query += " ORDER BY created_at DESC LIMIT ?"

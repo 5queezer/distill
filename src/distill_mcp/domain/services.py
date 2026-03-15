@@ -107,11 +107,11 @@ class MemoryService:
 
         # 1. Distill — inject agent_id prefix when present
         distill_input = raw_text
-        if agent_id:
+        if agent_id is not None:
             distill_input = f"[Agent: {agent_id}]\n{raw_text}"
 
         if self._distill_enabled:
-            distilled = await self._distiller.distill(distill_input, agent_id=agent_id)
+            distilled = await self._distiller.distill(distill_input)
         else:
             distilled = raw_text  # no prefix in stored content when distill off
 
@@ -196,7 +196,11 @@ class MemoryService:
                 agent_id=memory.agent_id,
             )
 
-        saved_id = await self._storage.save(memory, vec)
+        try:
+            saved_id = await self._storage.save(memory, vec)
+        except Exception:
+            self._pending[pending_id] = entry  # restore on failure
+            raise
         del self._pending[pending_id]
 
         return {"status": "saved", "id": saved_id, "distilled": memory.content}
@@ -285,9 +289,14 @@ class MemoryService:
             repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
         )
 
-    async def forget(self, id: str) -> dict:
+    async def forget(self, id: str, *, agent_id: str | None = None) -> dict:
         mem = await self._storage.get(id)
         if not mem:
             return {"status": "not_found"}
+        if agent_id is not None and mem.agent_id != agent_id:
+            return {
+                "status": "forbidden",
+                "reason": "Memory belongs to a different agent",
+            }
         await self._storage.delete(id)
         return {"status": "forgotten", "id": id}

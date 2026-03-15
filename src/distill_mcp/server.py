@@ -118,6 +118,8 @@ async def remember(
     Only the distilled factual output is stored in the team database.
 
     If repos is not provided, the current git repository is auto-detected.
+    If agent_id is provided, the memory is tagged with that agent identifier
+    for multi-agent filtering.
     """
     if repos is None:
         detected = detect_repo()
@@ -150,6 +152,9 @@ async def search_memory(
 
     Returns the most relevant memories ranked by combined relevance score.
     Optionally filter by repo name and/or agent_id.
+
+    When agent_id is None (default), memories from ALL agents are returned.
+    Pass an explicit agent_id to restrict results to a single agent's memories.
     """
     results = await _svc().search(query, top_k, repo=repo, agent_id=agent_id)
     return [
@@ -203,7 +208,11 @@ async def list_recent(
     limit: int = 20,
     agent_id: str | None = None,
 ) -> list[dict]:
-    """List recent memories, optionally filtered by repo, tag, type, or agent_id."""
+    """List recent memories, optionally filtered by repo, tag, type, or agent_id.
+
+    When agent_id is None (default), memories from ALL agents are returned.
+    Pass an explicit agent_id to restrict results to a single agent's memories.
+    """
     memories = await _svc().list_recent(
         repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
     )
@@ -222,6 +231,11 @@ async def list_recent(
 
 
 @mcp.tool
-async def forget(id: str) -> dict:
-    """Soft-delete a memory. It will no longer appear in search results."""
-    return await _svc().forget(id)
+async def forget(id: str, agent_id: str | None = None) -> dict:
+    """Soft-delete a memory. It will no longer appear in search results.
+
+    If agent_id is provided, the memory is only deleted when it belongs
+    to that agent. Returns 'forbidden' if the memory belongs to a
+    different agent.
+    """
+    return await _svc().forget(id, agent_id=agent_id)
