@@ -13,7 +13,7 @@ from distill_mcp.domain.services import MemoryService
 
 class FakeDistiller:
     async def distill(self, raw_text: str) -> str:
-        return raw_text
+        return "Distilled fact"
 
 
 class FakeEmbedder:
