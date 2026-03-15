@@ -121,7 +121,12 @@ class SqliteStore:
         return self._row_to_memory(row)
 
     async def search(
-        self, query_text: str, query_vec: list[float], top_k: int
+        self,
+        query_text: str,
+        query_vec: list[float],
+        top_k: int,
+        *,
+        repo: str | None = None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -134,7 +139,7 @@ class SqliteStore:
             if len(out) >= top_k:
                 break
             mem = await self.get(mid)
-            if mem:
+            if mem and (repo is None or repo in mem.repos):
                 out.append(SearchResult(memory=mem, score=score))
         return out
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
@@ -23,28 +24,52 @@ def _svc() -> MemoryService:
     return _service
 
 
+def detect_repo() -> str | None:
+    """Detect the current git repo name from the remote URL."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip().split("/")[-1].removesuffix(".git")
+    except Exception:
+        return None
+
+
 @mcp.tool
 async def remember(
     content: str,
     type: str,
-    repos: list[str],
+    repos: list[str] | None = None,
     tags: list[str] | None = None,
 ) -> dict:
     """Distill raw input into anonymous team knowledge and store it.
 
     The raw text is processed locally by Ollama and never leaves your device.
     Only the distilled factual output is stored in the team database.
+
+    If repos is not provided, the current git repository is auto-detected.
     """
+    if repos is None:
+        detected = detect_repo()
+        repos = [detected] if detected else []
     return await _svc().remember(content, type, repos, tags)
 
 
 @mcp.tool
-async def search_memory(query: str, top_k: int = 5) -> list[dict]:
+async def search_memory(
+    query: str, top_k: int = 5, repo: str | None = None
+) -> list[dict]:
     """Search team knowledge using hybrid keyword + semantic search.
 
     Returns the most relevant memories ranked by combined relevance score.
+    Optionally filter by repo name. If not provided, returns results from all repos.
     """
-    results = await _svc().search(query, top_k)
+    results = await _svc().search(query, top_k, repo=repo)
     return [
         {
             "id": r.memory.id,
