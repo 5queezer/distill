@@ -98,7 +98,9 @@ class MemoryService:
             try:
                 entry.private_file.unlink(missing_ok=True)
             except OSError as exc:
-                logging.debug("Could not delete private file %s: %s", entry.private_file, exc)
+                logging.debug(
+                    "Could not delete private file %s: %s", entry.private_file, exc
+                )
 
     def _prune_expired(self) -> None:
         """Remove expired entries from pending dict and delete their private files."""
