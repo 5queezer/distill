@@ -1,4 +1,9 @@
-# Skill: Seed Knowledge Base from Git History
+---
+name: seed-from-git
+description: Populate the distill knowledge base from a repo's git history. Walks commits, extracts decisions/patterns/context, and calls remember for each.
+---
+
+# Seed Knowledge Base from Git History
 
 ## When to use
 
