@@ -54,7 +54,14 @@ class FakeStorage:
     async def delete(self, id: str) -> None:
         pass
 
-    async def search(self, query_text: str, query_vec: list[float], top_k: int) -> list:
+    async def search(
+        self,
+        query_text: str,
+        query_vec: list[float],
+        top_k: int,
+        *,
+        repo: str | None = None,
+    ) -> list:
         return []
 
     async def list_recent(self, **kw: Any) -> list:

@@ -66,9 +66,11 @@ class MemoryService:
         saved_id = await self._storage.save(memory, vec)
         return {"status": "saved", "id": saved_id, "distilled": distilled}
 
-    async def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
+    async def search(
+        self, query: str, top_k: int = 5, *, repo: str | None = None
+    ) -> list[SearchResult]:
         vec = await self._embedder.embed(query)
-        return await self._storage.search(query, vec, top_k)
+        return await self._storage.search(query, vec, top_k, repo=repo)
 
     async def get(self, id: str) -> Memory | None:
         return await self._storage.get(id)

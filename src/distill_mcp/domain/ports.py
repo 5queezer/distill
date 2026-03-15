@@ -14,7 +14,12 @@ class StoragePort(Protocol):
     ) -> str: ...
     async def get(self, id: str) -> Memory | None: ...
     async def search(
-        self, query_text: str, query_vec: list[float], top_k: int
+        self,
+        query_text: str,
+        query_vec: list[float],
+        top_k: int,
+        *,
+        repo: str | None = None,
     ) -> list[SearchResult]: ...
     async def delete(self, id: str) -> None: ...
     async def list_recent(
