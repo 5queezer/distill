@@ -32,6 +32,41 @@ Developer writes freely
 
 Raw text never crosses a network boundary. Anthropic never sees it. Your team never sees it. Only the clean, anonymous knowledge is stored and searchable.
 
+## Self-learning
+
+Distill ships with built-in instructions that tell Claude Code to
+use memory automatically. No prompting needed.
+
+**Claude saves automatically** when you:
+
+- Correct a mistake → Claude remembers the right way
+- Decide after discussion → Claude remembers the outcome
+- Establish a convention → Claude remembers the rule
+
+**Claude searches automatically** before:
+
+- Proposing architecture or technology choices
+- Creating new files or modules
+- Answering "how should we..." questions
+
+```
+You:    "No, we don't use REST here. We switched to gRPC last month."
+
+Claude: [saves to distill]
+        Got it. I've noted that the team uses gRPC, not REST.
+
+        ... next session, different repo ...
+
+You:    "Set up the API for this new service."
+
+Claude: [searches distill → finds gRPC decision]
+        Based on your team's knowledge, I'll set up a gRPC
+        service since the team switched from REST last month.
+```
+
+No CLAUDE.md hacking. No manual setup. Install distill,
+and Claude starts learning from your corrections.
+
 ## Install
 
 ```bash
