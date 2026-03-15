@@ -168,6 +168,7 @@ class MemoryService:
 
         entry = self._pending.get(pending_id)
         if entry is None:
+            self.cleanup_expired_pending()
             return {"status": "not_found", "pending_id": pending_id}
 
         if entry["expires_at"] <= time.time():
