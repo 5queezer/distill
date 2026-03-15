@@ -210,3 +210,25 @@ async def test_prune_expired_cleans_dict() -> None:
 
     # The manually inserted expired entry should be gone
     assert expired_id not in svc._pending
+
+
+async def test_concurrent_confirms_only_one_saves() -> None:
+    """Optimistic pop ensures only one concurrent confirm succeeds."""
+    import asyncio
+
+    svc = _service()
+    preview = await svc.remember(_VALID_INPUT, "decision", ["repo"])
+    pending_id = preview["pending_id"]
+
+    call_log.clear()
+    results = await asyncio.gather(
+        svc.confirm_memory(pending_id),
+        svc.confirm_memory(pending_id),
+    )
+
+    statuses = {r["status"] for r in results}
+    # One must be "saved", the other "not_found" (entry was already popped)
+    assert "saved" in statuses
+    assert statuses == {"saved", "not_found"}
+    # Only one save to storage
+    assert call_log.count("save") == 1

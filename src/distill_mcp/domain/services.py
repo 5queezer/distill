@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -89,6 +89,15 @@ class MemoryService:
             return f"Input too short ({len(stripped)} chars). Minimum {MIN_CONTENT_LENGTH}."
         return None
 
+    @staticmethod
+    def _cleanup_private_file(entry: _PendingEntry) -> None:
+        """Delete the raw-text private file for an entry, ignoring errors."""
+        if entry.private_file is not None:
+            try:
+                entry.private_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def _prune_expired(self) -> None:
         """Remove expired entries from pending dict and delete their private files."""
         now = datetime.now(UTC)
@@ -97,11 +106,7 @@ class MemoryService:
         ]
         for pid in expired_ids:
             entry = self._pending.pop(pid)
-            if entry.private_file is not None:
-                try:
-                    entry.private_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            self._cleanup_private_file(entry)
 
     async def remember(
         self,
@@ -159,6 +164,7 @@ class MemoryService:
             self._private_dir.mkdir(parents=True, exist_ok=True)
             private_file = self._private_dir / f"{pending_id}.txt"
             private_file.write_text(raw_text, encoding="utf-8")
+            private_file.chmod(0o600)
 
         expires_at = datetime.now(UTC) + timedelta(seconds=self._preview_ttl_seconds)
         self._pending[pending_id] = _PendingEntry(
@@ -184,23 +190,21 @@ class MemoryService:
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
-        # Look up pending entry
-        entry = self._pending.get(pending_id)
+        self._prune_expired()
+
+        # Optimistic claim: pop before any await to prevent concurrent confirms
+        # of the same pending_id from both succeeding.
+        entry = self._pending.pop(pending_id, None)
         if entry is None:
             return {"status": "not_found", "reason": "pending_id not found or expired"}
 
-        # Check expiry
+        # Check expiry (entry is already removed from pending)
         if entry.expires_at < datetime.now(UTC):
-            # Clean up expired entry
-            if entry.private_file is not None:
-                try:
-                    entry.private_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            self._pending.pop(pending_id, None)
+            self._cleanup_private_file(entry)
             return {"status": "expired"}
 
-        # Determine final text and vector
+        # Determine final text and vector.
+        # override is stored as-is (user-edited text bypasses distillation by design).
         if override is not None:
             final_text = override
             vec = await self._embedder.embed(final_text)
@@ -211,13 +215,7 @@ class MemoryService:
         # Dedup check
         existing_id = await self._storage.check_duplicate(vec)
         if existing_id:
-            # Clean up
-            if entry.private_file is not None:
-                try:
-                    entry.private_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
-            self._pending.pop(pending_id, None)
+            self._cleanup_private_file(entry)
             return {"status": "duplicate", "existing_id": existing_id}
 
         # Save
@@ -231,14 +229,7 @@ class MemoryService:
             created_at=datetime.now(UTC),
         )
         saved_id = await self._storage.save(memory, vec)
-
-        # Cleanup: delete private file, remove from pending
-        if entry.private_file is not None:
-            try:
-                entry.private_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-        self._pending.pop(pending_id, None)
+        self._cleanup_private_file(entry)
 
         return {"status": "saved", "id": saved_id, "distilled": final_text}
 
