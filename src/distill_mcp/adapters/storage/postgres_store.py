@@ -87,7 +87,7 @@ class PostgresStore:
         self._port = port
         self._database = database
         self._user = user
-        self._password=pass*[REDACTED]
+        self._password = password
         self._min_pool = min_pool
         self._max_pool = max_pool
         self._rrf_k = rrf_k
@@ -109,7 +109,7 @@ class PostgresStore:
                 port=self._port,
                 database=self._database,
                 user=self._user,
-                password=self*[REDACTED],
+                password=self._password,
                 min_size=self._min_pool,
                 max_size=self._max_pool,
                 init=_register_vector,
