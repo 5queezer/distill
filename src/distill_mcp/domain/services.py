@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -39,6 +40,9 @@ RECENCY_WEIGHT = 0.15
 RECENCY_HALFLIFE_DAYS = 30
 ACCESS_BOOST_WEIGHT = 0.1
 
+# Preview TTL in seconds
+PENDING_TTL = 300
+
 
 class MemoryService:
     """Core use cases: remember, search, get, update, list_recent, forget."""
@@ -50,12 +54,28 @@ class MemoryService:
         distiller: DistillerPort,
         *,
         distill_enabled: bool = True,
+        distill_preview: bool = True,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
         self._distiller = distiller
         self._distill_enabled = distill_enabled
+        self._distill_preview = distill_preview
         self._bg_tasks: set[asyncio.Task[None]] = set()
+        # pending_id -> {memory, vec, expires_at}
+        self._pending: dict[str, dict] = {}
+
+    # ------------------------------------------------------------------
+    # Pending store helpers
+    # ------------------------------------------------------------------
+
+    def cleanup_expired_pending(self) -> int:
+        """Remove expired pending entries. Returns count removed."""
+        now = time.time()
+        expired = [pid for pid, e in self._pending.items() if e["expires_at"] <= now]
+        for pid in expired:
+            del self._pending[pid]
+        return len(expired)
 
     @staticmethod
     def _is_noise(text: str) -> str | None:
@@ -73,19 +93,27 @@ class MemoryService:
         type: str,
         repos: list[str],
         tags: list[str] | None = None,
+        agent_id: str | None = None,
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
-        # 0. Noise filter — reject before wasting Ollama cycles
+        # Opportunistic cleanup
+        self.cleanup_expired_pending()
+
+        # 0. Noise filter
         noise_reason = self._is_noise(raw_text)
         if noise_reason:
             return {"status": "rejected", "reason": noise_reason}
 
-        # 1. Distill
+        # 1. Distill — inject agent_id prefix when present
+        distill_input = raw_text
+        if agent_id:
+            distill_input = f"[Agent: {agent_id}]\n{raw_text}"
+
         if self._distill_enabled:
-            distilled = await self._distiller.distill(raw_text)
+            distilled = await self._distiller.distill(distill_input, agent_id=agent_id)
         else:
-            distilled = raw_text
+            distilled = raw_text  # no prefix in stored content when distill off
 
         if "no_factual_content" in distilled.lower().replace(" ", "_"):
             return {"status": "rejected", "reason": "no factual content"}
@@ -98,7 +126,7 @@ class MemoryService:
         if existing_id:
             return {"status": "duplicate", "existing_id": existing_id}
 
-        # 4. Save
+        # 4. Build memory object
         memory = Memory(
             id=uuid4().hex,
             content=distilled,
@@ -107,35 +135,100 @@ class MemoryService:
             tags=tags or [],
             author=None,
             created_at=datetime.now(UTC),
+            agent_id=agent_id,
         )
+
+        # 5. Preview gate
+        if self._distill_preview:
+            pending_id = uuid4().hex
+            self._pending[pending_id] = {
+                "memory": memory,
+                "vec": vec,
+                "expires_at": time.time() + PENDING_TTL,
+            }
+            return {
+                "status": "pending",
+                "pending_id": pending_id,
+                "distilled": distilled,
+                "message": (
+                    f"Call confirm_memory(id='{pending_id}') to store, "
+                    "or pass override='...' to edit first. Expires in 5 min."
+                ),
+            }
+
+        # 6. Direct save (preview disabled)
         saved_id = await self._storage.save(memory, vec)
         return {"status": "saved", "id": saved_id, "distilled": distilled}
 
+    async def confirm_memory(
+        self, pending_id: str, override: str | None = None
+    ) -> dict:
+        """Commit a pending preview to storage."""
+        from distill_mcp.domain.models import Memory
+
+        self.cleanup_expired_pending()
+
+        entry = self._pending.get(pending_id)
+        if entry is None:
+            return {"status": "not_found", "pending_id": pending_id}
+
+        if entry["expires_at"] <= time.time():
+            del self._pending[pending_id]
+            return {"status": "expired", "pending_id": pending_id}
+
+        memory: Memory = entry["memory"]
+        vec: list[float] = entry["vec"]
+
+        if override is not None:
+            if self._distill_enabled:
+                distilled = await self._distiller.distill(override)
+            else:
+                distilled = override
+            vec = await self._embedder.embed(distilled)
+            memory = Memory(
+                id=uuid4().hex,
+                content=distilled,
+                type=memory.type,
+                repos=memory.repos,
+                tags=memory.tags,
+                author=memory.author,
+                created_at=datetime.now(UTC),
+                agent_id=memory.agent_id,
+            )
+
+        saved_id = await self._storage.save(memory, vec)
+        del self._pending[pending_id]
+
+        return {"status": "saved", "id": saved_id, "distilled": memory.content}
+
     async def search(
-        self, query: str, top_k: int = 5, *, repo: str | None = None
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]:
         vec = await self._embedder.embed(query)
-        results = await self._storage.search(query, vec, top_k, repo=repo)
+        results = await self._storage.search(
+            query, vec, top_k, repo=repo, agent_id=agent_id
+        )
 
-        # Recency boost: blend RRF score with recency signal
+        # Recency boost
         now = datetime.now(UTC)
         for r in results:
             age_days = (now - r.memory.created_at).days
             recency = 1.0 / (1.0 + age_days / RECENCY_HALFLIFE_DAYS)
             r.score = (1.0 - RECENCY_WEIGHT) * r.score + RECENCY_WEIGHT * recency
 
-        # Access-frequency boost: frequently retrieved memories score higher
+        # Access-frequency boost
         for r in results:
             access_boost = math.log(r.memory.access_count + 1) * ACCESS_BOOST_WEIGHT
             r.score *= 1.0 + access_boost
 
-        # Hard min score: drop irrelevant results
         results = [r for r in results if r.score >= MIN_SEARCH_SCORE]
-
-        # Re-sort after recency + access adjustment
         results.sort(key=lambda r: r.score, reverse=True)
 
-        # Record access (fire-and-forget, non-blocking)
         for r in results:
             task = asyncio.create_task(self._storage.record_access(r.memory.id))
             self._bg_tasks.add(task)
@@ -168,6 +261,7 @@ class MemoryService:
             tags=old.tags,
             author=old.author,
             created_at=datetime.now(UTC),
+            agent_id=old.agent_id,
         )
         await self._storage.save(new_memory, vec, supersedes=id)
         await self._storage.delete(id)
@@ -185,9 +279,10 @@ class MemoryService:
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        agent_id: str | None = None,
     ) -> list[Memory]:
         return await self._storage.list_recent(
-            repo=repo, tag=tag, type=type, limit=limit
+            repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
         )
 
     async def forget(self, id: str) -> dict:

@@ -61,6 +61,7 @@ class FakeStorage:
         top_k: int,
         *,
         repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list:
         return []
 
@@ -83,6 +84,7 @@ def _service(
         storage=FakeStorage(dup_id=dup_id),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(distiller_output),
+        distill_preview=False,
     )
 
 

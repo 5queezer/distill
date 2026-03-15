@@ -63,7 +63,8 @@ class SqliteStore:
                 supersedes TEXT,
                 deleted_at TEXT,
                 access_count INTEGER NOT NULL DEFAULT 0,
-                last_accessed_at TEXT
+                last_accessed_at TEXT,
+                agent_id TEXT
             )
         """)
         c.execute("""
@@ -79,6 +80,7 @@ class SqliteStore:
         migrations = [
             ("access_count", "INTEGER NOT NULL DEFAULT 0"),
             ("last_accessed_at", "TEXT"),
+            ("agent_id", "TEXT"),
         ]
         for col, typedef in migrations:
             if col not in existing:
@@ -98,8 +100,8 @@ class SqliteStore:
         c = self._conn
         c.execute(
             """INSERT INTO memories (id, content, type, repos, tags, author,
-                                    created_at, supersedes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    created_at, supersedes, agent_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 memory.id,
                 memory.content,
@@ -109,6 +111,7 @@ class SqliteStore:
                 memory.author,
                 memory.created_at.isoformat(),
                 supersedes,
+                memory.agent_id,
             ),
         )
         tag_str = " ".join(memory.tags)
@@ -118,7 +121,7 @@ class SqliteStore:
         )
         c.commit()
 
-        data = [{"id": memory.id, "vector": vec}]
+        data = [{"id": memory.id, "vector": vec, "agent_id": memory.agent_id or ""}]
         if self._has_vec_table():
             self._lance.open_table("vectors").add(data)
         else:
@@ -142,6 +145,7 @@ class SqliteStore:
         top_k: int,
         *,
         repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -154,8 +158,13 @@ class SqliteStore:
             if len(out) >= top_k:
                 break
             mem = await self.get(mid)
-            if mem and (repo is None or repo in mem.repos):
-                out.append(SearchResult(memory=mem, score=score))
+            if mem is None:
+                continue
+            if repo is not None and repo not in mem.repos:
+                continue
+            if agent_id is not None and mem.agent_id != agent_id:
+                continue
+            out.append(SearchResult(memory=mem, score=score))
         return out
 
     async def delete(self, id: str) -> None:
@@ -182,6 +191,7 @@ class SqliteStore:
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        agent_id: str | None = None,
     ) -> list[Memory]:
         assert self._conn is not None
         query = "SELECT * FROM memories WHERE deleted_at IS NULL"
@@ -195,6 +205,9 @@ class SqliteStore:
         if type:
             query += " AND type = ?"
             params.append(type)
+        if agent_id:
+            query += " AND agent_id = ?"
+            params.append(agent_id)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(query, params).fetchall()
@@ -268,4 +281,5 @@ class SqliteStore:
             last_accessed_at=datetime.fromisoformat(last_accessed)
             if last_accessed
             else None,
+            agent_id=row["agent_id"],
         )
