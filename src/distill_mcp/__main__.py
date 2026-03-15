@@ -4,6 +4,8 @@ import sys
 
 
 def _run_server() -> None:
+    from pathlib import Path
+
     from distill_mcp.adapters.distiller.ollama_distill import OllamaDistiller
     from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
     from distill_mcp.adapters.storage.sqlite_store import SqliteStore
@@ -17,11 +19,16 @@ def _run_server() -> None:
     embedder = OllamaEmbedder(host=settings.ollama_host, model=settings.embedding_model)
     distiller = OllamaDistiller(host=settings.ollama_host, model=settings.llm_model)
 
+    private_dir = Path(settings.data_dir).expanduser() / "private"
+
     service = MemoryService(
         storage=store,
         embedder=embedder,
         distiller=distiller,
         distill_enabled=settings.distill_enabled,
+        preview_enabled=settings.preview_enabled,
+        preview_ttl_seconds=settings.preview_ttl_seconds,
+        private_dir=private_dir,
     )
     set_service(service)
     mcp.run(transport="stdio")

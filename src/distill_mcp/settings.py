@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     max_memory_size: int = 8000
     fts_language: str = "simple"
     distill_enabled: bool = True
+    preview_enabled: bool = True
+    preview_ttl_seconds: int = 300
 
 
 settings = Settings()

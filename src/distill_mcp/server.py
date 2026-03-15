@@ -1,4 +1,4 @@
-"""MCP server — thin adapter exposing 6 tools. No business logic here."""
+"""MCP server — thin adapter exposing 7 tools. No business logic here."""
 
 from __future__ import annotations
 
@@ -13,6 +13,11 @@ if TYPE_CHECKING:
 mcp = FastMCP(
     "distill",
     instructions="""\
+## CRITICAL RULE
+NEVER call confirm_memory automatically after remember.
+ALWAYS show the preview to the user and wait for explicit confirmation.
+Calling confirm_memory without user approval defeats the purpose of the preview.
+
 ## Memory Protocol
 
 ### Storing — after every correction or decision
@@ -99,7 +104,14 @@ async def remember(
     repos: list[str] | None = None,
     tags: list[str] | None = None,
 ) -> dict:
-    """Distill raw input into anonymous team knowledge and store it.
+    """Distill raw input into anonymous team knowledge.
+
+    When preview mode is enabled (default), this returns a distilled preview
+    with a pending_id. The memory is NOT stored yet. Show the preview to the
+    user and call confirm_memory with the pending_id after they approve.
+
+    When preview mode is disabled (DISTILL_PREVIEW=false), this stores
+    immediately and returns the saved memory id.
 
     The raw text is processed locally by Ollama and never leaves your device.
     Only the distilled factual output is stored in the team database.
@@ -110,6 +122,18 @@ async def remember(
         detected = detect_repo()
         repos = [detected] if detected else []
     return await _svc().remember(content, type, repos, tags)
+
+
+@mcp.tool
+async def confirm_memory(pending_id: str, override: str | None = None) -> dict:
+    """Commit a distilled memory preview to the team knowledge base.
+
+    Call after remember() returns a preview. Optionally provide an override
+    to store your edited version instead of the distilled preview.
+
+    override: if provided, this exact text is stored instead of the distilled preview.
+    """
+    return await _svc().confirm_memory(pending_id, override)
 
 
 @mcp.tool

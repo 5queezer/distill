@@ -83,6 +83,7 @@ def _service(
         storage=FakeStorage(dup_id=dup_id),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(distiller_output),
+        preview_enabled=False,
     )
 
 
