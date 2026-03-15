@@ -87,8 +87,7 @@ class PostgresStore:
         self._port = port
         self._database = database
         self._user = user
-        _pw = password
-        self._password = _pw
+        self._password = password
         self._min_pool = min_pool
         self._max_pool = max_pool
         self._rrf_k = rrf_k
