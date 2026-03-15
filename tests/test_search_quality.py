@@ -75,6 +75,7 @@ def _service(search_results: list[SearchResult] | None = None) -> MemoryService:
         storage=FakeStorage(search_results),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
+        preview_enabled=False,
     )
 
 
