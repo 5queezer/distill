@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import math
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -35,6 +37,7 @@ MIN_CONTENT_LENGTH = 20
 MIN_SEARCH_SCORE = 0.35
 RECENCY_WEIGHT = 0.15
 RECENCY_HALFLIFE_DAYS = 30
+ACCESS_BOOST_WEIGHT = 0.1
 
 
 class MemoryService:
@@ -52,6 +55,7 @@ class MemoryService:
         self._embedder = embedder
         self._distiller = distiller
         self._distill_enabled = distill_enabled
+        self._bg_tasks: set[asyncio.Task[None]] = set()
 
     @staticmethod
     def _is_noise(text: str) -> str | None:
@@ -120,11 +124,23 @@ class MemoryService:
             recency = 1.0 / (1.0 + age_days / RECENCY_HALFLIFE_DAYS)
             r.score = (1.0 - RECENCY_WEIGHT) * r.score + RECENCY_WEIGHT * recency
 
+        # Access-frequency boost: frequently retrieved memories score higher
+        for r in results:
+            access_boost = math.log(r.memory.access_count + 1) * ACCESS_BOOST_WEIGHT
+            r.score *= 1.0 + access_boost
+
         # Hard min score: drop irrelevant results
         results = [r for r in results if r.score >= MIN_SEARCH_SCORE]
 
-        # Re-sort after recency adjustment
+        # Re-sort after recency + access adjustment
         results.sort(key=lambda r: r.score, reverse=True)
+
+        # Record access (fire-and-forget, non-blocking)
+        for r in results:
+            task = asyncio.create_task(self._storage.record_access(r.memory.id))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+
         return results
 
     async def get(self, id: str) -> Memory | None:

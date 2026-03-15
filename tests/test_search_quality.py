@@ -66,6 +66,9 @@ class FakeStorage:
     async def list_recent(self, **kw: Any) -> list:
         return []
 
+    async def record_access(self, id: str) -> None:
+        pass
+
 
 def _service(search_results: list[SearchResult] | None = None) -> MemoryService:
     return MemoryService(

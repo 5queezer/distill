@@ -15,6 +15,8 @@ class Memory:
     tags: list[str]
     author: str | None  # None=anonymous, hash=pseudonym, name=named
     created_at: datetime
+    access_count: int = 0
+    last_accessed_at: datetime | None = None
 
 
 @dataclass

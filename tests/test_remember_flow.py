@@ -67,6 +67,9 @@ class FakeStorage:
     async def list_recent(self, **kw: Any) -> list:
         return []
 
+    async def record_access(self, id: str) -> None:
+        pass
+
 
 @pytest.fixture(autouse=True)
 def _reset_log() -> None:
