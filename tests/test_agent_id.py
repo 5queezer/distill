@@ -262,7 +262,7 @@ async def test_forget_nonexistent_returns_not_found() -> None:
 
 async def test_confirm_memory_restores_pending_on_save_failure() -> None:
     """If storage.save() raises, the pending entry must be preserved."""
-    svc, storage, _ = _service(distill_preview=True, fail_save=True)
+    svc, _storage, _ = _service(distill_preview=True, fail_save=True)
     pending = await svc.remember(_VALID_INPUT, "decision", ["repo"])
     assert pending["status"] == "pending"
     pid = pending["pending_id"]
