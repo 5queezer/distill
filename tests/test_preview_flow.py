@@ -212,6 +212,44 @@ async def test_prune_expired_cleans_dict() -> None:
     assert expired_id not in svc._pending
 
 
+async def test_secret_in_input_is_redacted_and_stored() -> None:
+    """Pre-scan redacts secrets; distillation and storage continue."""
+    from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
+
+    svc = MemoryService(
+        storage=FakeStorage(),
+        embedder=FakeEmbedder(),
+        distiller=FakeDistiller(),
+        preview_enabled=False,
+        scanner=SecretScanner(),
+    )
+    text = "Use token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for CI access"
+    result = await svc.remember(text, "decision", ["repo"])
+    assert result["status"] == "saved"
+    assert result["redacted_count"] >= 1
+
+
+async def test_secret_in_distilled_output_is_blocked() -> None:
+    """Post-scan hard-blocks if LLM leaks a secret in distilled output."""
+    from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
+
+    class LeakyDistiller:
+        async def distill(self, raw_text: str) -> str:
+            return "The CI token is ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for authentication"
+
+    svc = MemoryService(
+        storage=FakeStorage(),
+        embedder=FakeEmbedder(),
+        distiller=LeakyDistiller(),
+        preview_enabled=False,
+        scanner=SecretScanner(),
+    )
+    result = await svc.remember(
+        "Some legit input about our CI setup pipeline", "decision", ["repo"]
+    )
+    assert result["status"] == "blocked"
+
+
 async def test_concurrent_confirms_only_one_saves() -> None:
     """Optimistic-pop contract: concurrent confirms yield exactly one saved and one not_found."""
     import asyncio

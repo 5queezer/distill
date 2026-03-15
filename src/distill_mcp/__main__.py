@@ -8,6 +8,7 @@ def _run_server() -> None:
 
     from distill_mcp.adapters.distiller.ollama_distill import OllamaDistiller
     from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
+    from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
     from distill_mcp.adapters.storage.sqlite_store import SqliteStore
     from distill_mcp.domain.services import MemoryService
     from distill_mcp.server import mcp, set_service
@@ -21,6 +22,8 @@ def _run_server() -> None:
 
     private_dir = Path(settings.data_dir).expanduser() / "private"
 
+    scanner = SecretScanner()
+
     service = MemoryService(
         storage=store,
         embedder=embedder,
@@ -29,6 +32,7 @@ def _run_server() -> None:
         preview_enabled=settings.preview_enabled,
         preview_ttl_seconds=settings.preview_ttl_seconds,
         private_dir=private_dir,
+        scanner=scanner,
     )
     set_service(service)
     mcp.run(transport="stdio")

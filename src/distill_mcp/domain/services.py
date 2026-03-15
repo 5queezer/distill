@@ -14,7 +14,12 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, SearchResult
-    from distill_mcp.domain.ports import DistillerPort, EmbeddingPort, StoragePort
+    from distill_mcp.domain.ports import (
+        DistillerPort,
+        EmbeddingPort,
+        ScannerPort,
+        StoragePort,
+    )
 
 # Noise filter: trivial inputs that should never be stored
 NOISE_PATTERNS = frozenset(
@@ -70,6 +75,7 @@ class MemoryService:
         preview_enabled: bool = True,
         preview_ttl_seconds: int = 300,
         private_dir: Path | None = None,
+        scanner: ScannerPort | None = None,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
@@ -78,6 +84,7 @@ class MemoryService:
         self._preview_enabled = preview_enabled
         self._preview_ttl_seconds = preview_ttl_seconds
         self._private_dir = private_dir
+        self._scanner = scanner
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, _PendingEntry] = {}
 
@@ -129,6 +136,11 @@ class MemoryService:
         if noise_reason:
             return {"status": "rejected", "reason": noise_reason}
 
+        # Layer 1: Pre-distillation secret scan — redact before Ollama sees it
+        pre_findings: list = []
+        if self._scanner is not None:
+            raw_text, pre_findings = self._scanner.redact(raw_text)
+
         # 1. Distill
         if self._distill_enabled:
             distilled = await self._distiller.distill(raw_text)
@@ -137,6 +149,13 @@ class MemoryService:
 
         if "no_factual_content" in distilled.lower().replace(" ", "_"):
             return {"status": "rejected", "reason": "no factual content"}
+
+        # Layer 3: Post-distillation secret scan — hard block if LLM leaked secrets
+        if self._scanner is not None and self._scanner.has_secrets(distilled):
+            return {
+                "status": "blocked",
+                "reason": "Distilled output contained potential secrets. Nothing was saved.",
+            }
 
         # 2. Embed
         vec = await self._embedder.embed(distilled)
@@ -159,7 +178,12 @@ class MemoryService:
                 created_at=datetime.now(UTC),
             )
             saved_id = await self._storage.save(memory, vec)
-            return {"status": "saved", "id": saved_id, "distilled": distilled}
+            return {
+                "status": "saved",
+                "id": saved_id,
+                "distilled": distilled,
+                "redacted_count": len(pre_findings),
+            }
 
         # Preview enabled: save to pending, write raw text to private file
         pending_id = uuid4().hex
@@ -188,6 +212,7 @@ class MemoryService:
             "pending_id": pending_id,
             "distilled": distilled,
             "expires_in_seconds": self._preview_ttl_seconds,
+            "redacted_count": len(pre_findings),
         }
 
     async def confirm_memory(
