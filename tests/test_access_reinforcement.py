@@ -82,6 +82,7 @@ def _service(
         storage=storage,
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
+        distill_preview=False,
     )
     return svc, storage
 
