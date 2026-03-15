@@ -1,4 +1,4 @@
-"""MCP server — thin adapter exposing 6 tools. No business logic here."""
+"""MCP server — thin adapter exposing tools. No business logic here."""
 
 from __future__ import annotations
 
@@ -24,6 +24,15 @@ What to remember:
 - Something was tried and failed → remember failure + reason
 - A convention is established → remember the convention
 - You went back and forth → remember the final decision
+
+### Preview flow — CRITICAL
+When `remember` returns `status: pending`, you MUST:
+1. Show the distilled preview to the user
+2. Wait for explicit approval
+3. Only THEN call `confirm_memory(id=<pending_id>)`
+
+NEVER call `confirm_memory` automatically after `remember`.
+Always show the preview and wait for explicit user approval.
 
 ### Retrieval — MANDATORY before these actions
 ALWAYS call `search_memory` BEFORE:
@@ -98,30 +107,56 @@ async def remember(
     type: str,
     repos: list[str] | None = None,
     tags: list[str] | None = None,
+    agent_id: str | None = None,
 ) -> dict:
-    """Distill raw input into anonymous team knowledge and store it.
+    """Distill raw input into anonymous team knowledge.
+
+    When preview mode is enabled (default), returns a pending preview.
+    Show the preview to the user and call confirm_memory() after approval.
 
     The raw text is processed locally by Ollama and never leaves your device.
     Only the distilled factual output is stored in the team database.
 
     If repos is not provided, the current git repository is auto-detected.
+    If agent_id is provided, the memory is tagged with that agent identifier
+    for multi-agent filtering.
     """
     if repos is None:
         detected = detect_repo()
         repos = [detected] if detected else []
-    return await _svc().remember(content, type, repos, tags)
+    return await _svc().remember(content, type, repos, tags, agent_id=agent_id)
+
+
+@mcp.tool
+async def confirm_memory(id: str, override: str | None = None) -> dict:
+    """Confirm a pending memory preview and store it.
+
+    Call after remember() returns status='pending'.
+    Optionally provide override text to store a corrected version instead.
+
+    Args:
+        id: The pending_id returned by remember().
+        override: Optional replacement text — will be re-distilled and stored.
+    """
+    return await _svc().confirm_memory(id, override)
 
 
 @mcp.tool
 async def search_memory(
-    query: str, top_k: int = 5, repo: str | None = None
+    query: str,
+    top_k: int = 5,
+    repo: str | None = None,
+    agent_id: str | None = None,
 ) -> list[dict]:
     """Search team knowledge using hybrid keyword + semantic search.
 
     Returns the most relevant memories ranked by combined relevance score.
-    Optionally filter by repo name. If not provided, returns results from all repos.
+    Optionally filter by repo name and/or agent_id.
+
+    When agent_id is None (default), memories from ALL agents are returned.
+    Pass an explicit agent_id to restrict results to a single agent's memories.
     """
-    results = await _svc().search(query, top_k, repo=repo)
+    results = await _svc().search(query, top_k, repo=repo, agent_id=agent_id)
     return [
         {
             "id": r.memory.id,
@@ -131,6 +166,7 @@ async def search_memory(
             "tags": r.memory.tags,
             "score": round(r.score, 4),
             "access_count": r.memory.access_count,
+            "agent_id": r.memory.agent_id,
         }
         for r in results
     ]
@@ -150,6 +186,7 @@ async def get_memory(id: str) -> dict:
         "tags": mem.tags,
         "author": mem.author,
         "created_at": mem.created_at.isoformat(),
+        "agent_id": mem.agent_id,
     }
 
 
@@ -169,9 +206,16 @@ async def list_recent(
     tag: str | None = None,
     type: str | None = None,
     limit: int = 20,
+    agent_id: str | None = None,
 ) -> list[dict]:
-    """List recent memories, optionally filtered by repo, tag, or type."""
-    memories = await _svc().list_recent(repo=repo, tag=tag, type=type, limit=limit)
+    """List recent memories, optionally filtered by repo, tag, type, or agent_id.
+
+    When agent_id is None (default), memories from ALL agents are returned.
+    Pass an explicit agent_id to restrict results to a single agent's memories.
+    """
+    memories = await _svc().list_recent(
+        repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
+    )
     return [
         {
             "id": m.id,
@@ -180,12 +224,18 @@ async def list_recent(
             "repos": m.repos,
             "tags": m.tags,
             "created_at": m.created_at.isoformat(),
+            "agent_id": m.agent_id,
         }
         for m in memories
     ]
 
 
 @mcp.tool
-async def forget(id: str) -> dict:
-    """Soft-delete a memory. It will no longer appear in search results."""
-    return await _svc().forget(id)
+async def forget(id: str, agent_id: str | None = None) -> dict:
+    """Soft-delete a memory. It will no longer appear in search results.
+
+    If agent_id is provided, the memory is only deleted when it belongs
+    to that agent. Returns 'forbidden' if the memory belongs to a
+    different agent.
+    """
+    return await _svc().forget(id, agent_id=agent_id)

@@ -22,6 +22,7 @@ def _run_server() -> None:
         embedder=embedder,
         distiller=distiller,
         distill_enabled=settings.distill_enabled,
+        distill_preview=settings.distill_preview,
     )
     set_service(service)
     mcp.run(transport="stdio")

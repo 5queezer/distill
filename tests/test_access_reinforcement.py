@@ -63,6 +63,7 @@ class FakeStorage:
         top_k: int,
         *,
         repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]:
         return list(self._search_results)
 
@@ -81,6 +82,7 @@ def _service(
         storage=storage,
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
+        distill_preview=False,
     )
     return svc, storage
 

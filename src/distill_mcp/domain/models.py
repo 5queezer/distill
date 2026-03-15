@@ -17,6 +17,7 @@ class Memory:
     created_at: datetime
     access_count: int = 0
     last_accessed_at: datetime | None = None
+    agent_id: str | None = None  # which agent wrote this (None = human)
 
 
 @dataclass

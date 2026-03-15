@@ -60,6 +60,7 @@ class FakeStorage:
         top_k: int,
         *,
         repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]:
         return list(self._search_results)
 
@@ -75,6 +76,7 @@ def _service(search_results: list[SearchResult] | None = None) -> MemoryService:
         storage=FakeStorage(search_results),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
+        distill_preview=False,
     )
 
 

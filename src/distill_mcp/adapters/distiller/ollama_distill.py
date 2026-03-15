@@ -29,7 +29,10 @@ numbers, dates, or details that the input does not mention.
 architecture decisions, bugs, deployments, dependencies, configurations. \
 Personal feelings, energy levels, or moods are NOT technical content. \
 If the input contains no software engineering content, output ONLY the \
-single token: NO_FACTUAL_CONTENT"""
+single token: NO_F*[REDACTED]
+9. When input is prefixed with [Agent: <id>], you are distilling output \
+from that specific agent. Extract only factual knowledge. Strip internal \
+reasoning chains. KEEP technology names exactly as written."""
 
 DISTILL_USER = """\
 Today's date: {today}

@@ -20,6 +20,7 @@ class StoragePort(Protocol):
         top_k: int,
         *,
         repo: str | None = None,
+        agent_id: str | None = None,
     ) -> list[SearchResult]: ...
     async def delete(self, id: str) -> None: ...
     async def record_access(self, id: str) -> None: ...
@@ -30,6 +31,7 @@ class StoragePort(Protocol):
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        agent_id: str | None = None,
     ) -> list[Memory]: ...
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
