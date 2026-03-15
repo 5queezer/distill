@@ -42,6 +42,25 @@ Trigger words that REQUIRE a `search_memory` call:
 ### Detect loops
 Before suggesting an approach, search memory first.
 If a memory says "tried X, didn't work because Y", don't suggest X again.
+
+### When search returns partial results
+If search_memory finds related context but not the exact answer:
+
+1. Tell the user what you DID find
+2. Offer TWO follow-up actions:
+   a) "I can check the git history for the reasoning"
+      → run git log --all --oneline --grep="<keyword>"
+      → distill what you find → remember it
+   b) "If you remember, tell me and I'll save it"
+      → when user answers → remember immediately
+
+Never leave a knowledge gap unfilled. Every question you ask
+is an opportunity to capture knowledge that's missing.
+
+### After answering from memory
+If you used search_memory to answer a question, and the user
+adds context or corrects you, remember the correction immediately.
+Don't wait. Don't ask. Just save.
 """,
 )
 _service: MemoryService | None = None
