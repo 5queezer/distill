@@ -13,7 +13,7 @@ from distill_mcp.domain.services import MemoryService
 
 class FakeDistiller:
     async def distill(self, raw_text: str) -> str:
-        return "Distilled fact"
+        return raw_text
 
 
 class FakeEmbedder:
@@ -56,7 +56,9 @@ def storage() -> FakeStorage:
 
 @pytest.fixture
 def svc(storage: FakeStorage) -> MemoryService:
-    return MemoryService(storage, FakeEmbedder(), FakeDistiller())
+    return MemoryService(
+        storage, FakeEmbedder(), FakeDistiller(), distill_enabled=False
+    )
 
 
 async def test_remember_with_occurred_at(
