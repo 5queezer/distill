@@ -223,7 +223,7 @@ async def test_secret_in_input_is_redacted_and_stored() -> None:
         preview_enabled=False,
         scanner=SecretScanner(),
     )
-    text = "Use token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for CI access"
+    text = "Use token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for CI access"  # pragma: allowlist secret
     result = await svc.remember(text, "decision", ["repo"])
     assert result["status"] == "saved"
     assert result["redacted_count"] >= 1
@@ -235,7 +235,7 @@ async def test_secret_in_distilled_output_is_blocked() -> None:
 
     class LeakyDistiller:
         async def distill(self, raw_text: str) -> str:
-            return "The CI token is ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for authentication"
+            return "The CI token is ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx for authentication"  # pragma: allowlist secret
 
     svc = MemoryService(
         storage=FakeStorage(),

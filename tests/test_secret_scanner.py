@@ -15,12 +15,12 @@ def scanner() -> SecretScanner:
 
 
 def test_github_token_detected(scanner):
-    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # pragma: allowlist secret
     assert scanner.has_secrets(text)
 
 
 def test_github_token_redacted(scanner):
-    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # pragma: allowlist secret
     clean, findings = scanner.redact(text)
     assert "ghp_" not in clean
     assert len(findings) >= 1
@@ -37,14 +37,14 @@ def test_normal_text_passes(scanner):
 
 
 def test_redact_returns_clean_text(scanner):
-    text = "Set token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx in CI"
+    text = "Set token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx in CI"  # pragma: allowlist secret
     clean, _findings = scanner.redact(text)
     assert "ghp_" not in clean
     assert "[REDACTED" in clean
 
 
 def test_scan_returns_findings(scanner):
-    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    text = "token = ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # pragma: allowlist secret
     findings = scanner.scan(text)
     assert len(findings) >= 1
     assert findings[0].type is not None
