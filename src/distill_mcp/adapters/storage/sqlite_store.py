@@ -59,6 +59,7 @@ class SqliteStore:
                 tags TEXT NOT NULL DEFAULT '[]',
                 author TEXT,
                 created_at TEXT NOT NULL,
+                occurred_at TEXT,
                 updated_at TEXT,
                 supersedes TEXT,
                 deleted_at TEXT
@@ -68,7 +69,14 @@ class SqliteStore:
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
             USING fts5(id UNINDEXED, content, tags, tokenize='unicode61')
         """)
+        self._migrate_occurred_at(c)
         c.commit()
+
+    @staticmethod
+    def _migrate_occurred_at(c: sqlite3.Connection) -> None:
+        cols = {row[1] for row in c.execute("PRAGMA table_info(memories)").fetchall()}
+        if "occurred_at" not in cols:
+            c.execute("ALTER TABLE memories ADD COLUMN occurred_at TEXT")
 
     # -- StoragePort implementation --
 
@@ -83,8 +91,8 @@ class SqliteStore:
         c = self._conn
         c.execute(
             """INSERT INTO memories (id, content, type, repos, tags, author,
-                                    created_at, supersedes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    created_at, occurred_at, supersedes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 memory.id,
                 memory.content,
@@ -93,6 +101,7 @@ class SqliteStore:
                 json.dumps(memory.tags),
                 memory.author,
                 memory.created_at.isoformat(),
+                memory.occurred_at.isoformat() if memory.occurred_at else None,
                 supersedes,
             ),
         )
@@ -158,6 +167,7 @@ class SqliteStore:
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        sort_by: str = "created_at",
     ) -> list[Memory]:
         assert self._conn is not None
         query = "SELECT * FROM memories WHERE deleted_at IS NULL"
@@ -171,7 +181,8 @@ class SqliteStore:
         if type:
             query += " AND type = ?"
             params.append(type)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        col = "occurred_at" if sort_by == "occurred_at" else "created_at"
+        query += f" ORDER BY COALESCE({col}, created_at) DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(query, params).fetchall()
         return [self._row_to_memory(r) for r in rows]
@@ -231,6 +242,7 @@ class SqliteStore:
     def _row_to_memory(row: sqlite3.Row) -> Memory:
         from distill_mcp.domain.models import Memory
 
+        occurred_raw = row["occurred_at"]
         return Memory(
             id=row["id"],
             content=row["content"],
@@ -239,4 +251,5 @@ class SqliteStore:
             tags=json.loads(row["tags"]),
             author=row["author"],
             created_at=datetime.fromisoformat(row["created_at"]),
+            occurred_at=datetime.fromisoformat(occurred_raw) if occurred_raw else None,
         )

@@ -15,6 +15,7 @@ class Memory:
     tags: list[str]
     author: str | None  # None=anonymous, hash=pseudonym, name=named
     created_at: datetime
+    occurred_at: datetime | None = None  # when it happened (vs. when stored)
 
 
 @dataclass

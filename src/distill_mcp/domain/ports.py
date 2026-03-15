@@ -29,6 +29,7 @@ class StoragePort(Protocol):
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        sort_by: str = "created_at",
     ) -> list[Memory]: ...
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95

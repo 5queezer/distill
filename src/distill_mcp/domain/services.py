@@ -33,6 +33,7 @@ class MemoryService:
         type: str,
         repos: list[str],
         tags: list[str] | None = None,
+        occurred_at: datetime | None = None,
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
@@ -54,6 +55,7 @@ class MemoryService:
             return {"status": "duplicate", "existing_id": existing_id}
 
         # 4. Save
+        now = datetime.now(UTC)
         memory = Memory(
             id=uuid4().hex,
             content=distilled,
@@ -61,7 +63,8 @@ class MemoryService:
             repos=repos,
             tags=tags or [],
             author=None,
-            created_at=datetime.now(UTC),
+            created_at=now,
+            occurred_at=occurred_at or now,
         )
         saved_id = await self._storage.save(memory, vec)
         return {"status": "saved", "id": saved_id, "distilled": distilled}
@@ -97,6 +100,7 @@ class MemoryService:
             tags=old.tags,
             author=old.author,
             created_at=datetime.now(UTC),
+            occurred_at=old.occurred_at,
         )
         await self._storage.save(new_memory, vec, supersedes=id)
         await self._storage.delete(id)
@@ -114,9 +118,10 @@ class MemoryService:
         tag: str | None = None,
         type: str | None = None,
         limit: int = 20,
+        sort_by: str = "created_at",
     ) -> list[Memory]:
         return await self._storage.list_recent(
-            repo=repo, tag=tag, type=type, limit=limit
+            repo=repo, tag=tag, type=type, limit=limit, sort_by=sort_by
         )
 
     async def forget(self, id: str) -> dict:

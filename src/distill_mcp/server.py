@@ -79,6 +79,7 @@ async def remember(
     type: str,
     repos: list[str] | None = None,
     tags: list[str] | None = None,
+    occurred_at: str | None = None,
 ) -> dict:
     """Distill raw input into anonymous team knowledge and store it.
 
@@ -86,11 +87,16 @@ async def remember(
     Only the distilled factual output is stored in the team database.
 
     If repos is not provided, the current git repository is auto-detected.
+    occurred_at is an optional ISO 8601 timestamp for when the event actually
+    happened (e.g. commit date). Defaults to now if omitted.
     """
+    from datetime import datetime
+
     if repos is None:
         detected = detect_repo()
         repos = [detected] if detected else []
-    return await _svc().remember(content, type, repos, tags)
+    ts = datetime.fromisoformat(occurred_at) if occurred_at else None
+    return await _svc().remember(content, type, repos, tags, occurred_at=ts)
 
 
 @mcp.tool
@@ -130,6 +136,7 @@ async def get_memory(id: str) -> dict:
         "tags": mem.tags,
         "author": mem.author,
         "created_at": mem.created_at.isoformat(),
+        "occurred_at": mem.occurred_at.isoformat() if mem.occurred_at else None,
     }
 
 
@@ -149,9 +156,15 @@ async def list_recent(
     tag: str | None = None,
     type: str | None = None,
     limit: int = 20,
+    sort_by: str = "created_at",
 ) -> list[dict]:
-    """List recent memories, optionally filtered by repo, tag, or type."""
-    memories = await _svc().list_recent(repo=repo, tag=tag, type=type, limit=limit)
+    """List recent memories, optionally filtered by repo, tag, or type.
+
+    sort_by: "created_at" (default) or "occurred_at" for timeline order.
+    """
+    memories = await _svc().list_recent(
+        repo=repo, tag=tag, type=type, limit=limit, sort_by=sort_by
+    )
     return [
         {
             "id": m.id,
@@ -160,6 +173,7 @@ async def list_recent(
             "repos": m.repos,
             "tags": m.tags,
             "created_at": m.created_at.isoformat(),
+            "occurred_at": m.occurred_at.isoformat() if m.occurred_at else None,
         }
         for m in memories
     ]
