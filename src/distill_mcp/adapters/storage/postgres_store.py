@@ -327,9 +327,7 @@ class PostgresStore:
         repos = (
             row["repos"] if isinstance(row["repos"], list) else json.loads(row["repos"])
         )
-        tags = (
-            row["tags"] if isinstance(row["tags"], list) else json.loads(row["tags"])
-        )
+        tags = row["tags"] if isinstance(row["tags"], list) else json.loads(row["tags"])
 
         return Memory(
             id=row["id"],
