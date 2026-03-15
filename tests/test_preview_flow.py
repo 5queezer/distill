@@ -213,7 +213,7 @@ async def test_prune_expired_cleans_dict() -> None:
 
 
 async def test_concurrent_confirms_only_one_saves() -> None:
-    """Optimistic pop ensures only one concurrent confirm succeeds."""
+    """Optimistic-pop contract: concurrent confirms yield exactly one saved and one not_found."""
     import asyncio
 
     svc = _service()

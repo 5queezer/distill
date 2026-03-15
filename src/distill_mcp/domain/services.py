@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -95,8 +97,8 @@ class MemoryService:
         if entry.private_file is not None:
             try:
                 entry.private_file.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                logging.debug("Could not delete private file %s: %s", entry.private_file, exc)
 
     def _prune_expired(self) -> None:
         """Remove expired entries from pending dict and delete their private files."""
@@ -163,8 +165,9 @@ class MemoryService:
         if self._private_dir is not None:
             self._private_dir.mkdir(parents=True, exist_ok=True)
             private_file = self._private_dir / f"{pending_id}.txt"
-            private_file.write_text(raw_text, encoding="utf-8")
-            private_file.chmod(0o600)
+            fd = os.open(private_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(raw_text)
 
         expires_at = datetime.now(UTC) + timedelta(seconds=self._preview_ttl_seconds)
         self._pending[pending_id] = _PendingEntry(
@@ -205,32 +208,37 @@ class MemoryService:
 
         # Determine final text and vector.
         # override is stored as-is (user-edited text bypasses distillation by design).
-        if override is not None:
-            final_text = override
-            vec = await self._embedder.embed(final_text)
-        else:
-            final_text = entry.distilled
-            vec = entry.vec
+        try:
+            if override is not None:
+                final_text = override
+                vec = await self._embedder.embed(final_text)
+            else:
+                final_text = entry.distilled
+                vec = entry.vec
 
-        # Dedup check
-        existing_id = await self._storage.check_duplicate(vec)
-        if existing_id:
-            self._cleanup_private_file(entry)
-            return {"status": "duplicate", "existing_id": existing_id}
+            # Dedup check
+            existing_id = await self._storage.check_duplicate(vec)
+            if existing_id:
+                self._cleanup_private_file(entry)
+                return {"status": "duplicate", "existing_id": existing_id}
 
-        # Save
-        memory = Memory(
-            id=uuid4().hex,
-            content=final_text,
-            type=entry.type,
-            repos=entry.repos,
-            tags=entry.tags,
-            author=None,
-            created_at=datetime.now(UTC),
-        )
-        saved_id = await self._storage.save(memory, vec)
+            # Save
+            memory = Memory(
+                id=uuid4().hex,
+                content=final_text,
+                type=entry.type,
+                repos=entry.repos,
+                tags=entry.tags,
+                author=None,
+                created_at=datetime.now(UTC),
+            )
+            saved_id = await self._storage.save(memory, vec)
+        except Exception:
+            # Re-insert so the caller can retry; entry TTL is still valid
+            self._pending[pending_id] = entry
+            raise
+
         self._cleanup_private_file(entry)
-
         return {"status": "saved", "id": saved_id, "distilled": final_text}
 
     async def search(
