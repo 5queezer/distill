@@ -193,13 +193,14 @@ class MemoryService:
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
-        self._prune_expired()
-
         # Optimistic claim: pop before any await to prevent concurrent confirms
         # of the same pending_id from both succeeding.
         entry = self._pending.pop(pending_id, None)
         if entry is None:
             return {"status": "not_found", "reason": "pending_id not found or expired"}
+
+        # Prune other expired entries now that ours is safely claimed
+        self._prune_expired()
 
         # Check expiry (entry is already removed from pending)
         if entry.expires_at < datetime.now(UTC):
