@@ -34,6 +34,13 @@ class StoragePort(Protocol):
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
     ) -> str | None: ...
+    async def export_all(
+        self,
+        *,
+        repos: list[str] | None = None,
+        after: str | None = None,
+        before: str | None = None,
+    ) -> list[Memory]: ...
 
 
 class EmbeddingPort(Protocol):

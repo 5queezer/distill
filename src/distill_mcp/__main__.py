@@ -54,9 +54,56 @@ def _install_skills() -> None:
     print("Done. Restart Claude Code to pick up new skills.")
 
 
+def _export(args: list[str]) -> None:
+    """Export memories: distill export --format timeline [--output FILE] [--repos a,b]."""
+    import argparse
+    import asyncio
+    from pathlib import Path
+
+    from distill_mcp.adapters.storage.sqlite_store import SqliteStore
+    from distill_mcp.settings import settings
+
+    parser = argparse.ArgumentParser(prog="distill export")
+    parser.add_argument(
+        "--format", required=True, choices=["timeline"], help="Export format"
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="knowledge-timeline.html",
+        help="Output file path (default: knowledge-timeline.html)",
+    )
+    parser.add_argument("--repos", help="Comma-separated repo filter")
+    parser.add_argument("--after", help="Include memories after this date (YYYY-MM)")
+    parser.add_argument("--before", help="Include memories before this date (YYYY-MM)")
+    opts = parser.parse_args(args)
+
+    store = SqliteStore(settings.data_dir, rrf_k=settings.rrf_k)
+    store.initialize()
+
+    repos = (
+        [r.strip() for r in opts.repos.split(",") if r.strip()] if opts.repos else None
+    )
+    memories = asyncio.run(
+        store.export_all(repos=repos, after=opts.after, before=opts.before)
+    )
+
+    if opts.format == "timeline":
+        from distill_mcp.formats.timeline import generate_timeline_html
+
+        html = generate_timeline_html(memories)
+
+    out = Path(opts.output)
+    out.write_text(html)
+    print(f"Exported {len(memories)} memories → {out}")
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "install-skills":
         _install_skills()
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "export":
+        _export(sys.argv[2:])
         return
     _run_server()
 

@@ -190,6 +190,15 @@ class MemoryService:
             repo=repo, tag=tag, type=type, limit=limit
         )
 
+    async def export_memories(
+        self,
+        *,
+        repos: list[str] | None = None,
+        after: str | None = None,
+        before: str | None = None,
+    ) -> list[Memory]:
+        return await self._storage.export_all(repos=repos, after=after, before=before)
+
     async def forget(self, id: str) -> dict:
         mem = await self._storage.get(id)
         if not mem:

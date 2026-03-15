@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knowledge Timeline</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;
+  background:#0f1117;color:#c9d1d9;overflow-x:hidden}
+a{color:#58a6ff;text-decoration:none}
+
+/* Stats bar */
+.stats{display:flex;gap:2rem;padding:1rem 1.5rem;background:#161b22;
+  border-bottom:1px solid #30363d;flex-wrap:wrap;align-items:center}
+.stats h1{font-size:1.1rem;font-weight:600;margin-right:auto}
+.stat{font-size:.85rem;color:#8b949e}
+.stat b{color:#c9d1d9}
+
+/* Filters */
+.filters{display:flex;gap:.5rem;padding:.75rem 1.5rem;background:#161b22;
+  border-bottom:1px solid #30363d;flex-wrap:wrap}
+.chip{padding:.25rem .6rem;border-radius:12px;font-size:.75rem;cursor:pointer;
+  border:1px solid #30363d;background:#21262d;color:#c9d1d9;user-select:none;
+  transition:opacity .15s}
+.chip.off{opacity:.35}
+.chip[data-type="decision"]{border-color:#2dd4bf;color:#2dd4bf}
+.chip[data-type="pattern"]{border-color:#60a5fa;color:#60a5fa}
+.chip[data-type="failure"]{border-color:#f87171;color:#f87171}
+.chip[data-type="dependency"]{border-color:#f472b6;color:#f472b6}
+.chip[data-type="context"]{border-color:#fbbf24;color:#fbbf24}
+.chip-label{font-size:.7rem;color:#8b949e;margin-right:.25rem;align-self:center}
+
+/* Timeline container */
+.timeline-wrap{position:relative;overflow-x:auto;overflow-y:auto;
+  padding:1.5rem 1.5rem 2rem}
+.timeline{position:relative;min-height:200px}
+
+/* Repo lanes */
+.lane{position:relative;min-height:44px;display:flex;align-items:flex-start;
+  border-bottom:1px solid #21262d;transition:min-height .2s ease}
+.lane-label{position:sticky;left:0;z-index:2;min-width:160px;padding-right:1rem;
+  font-size:.8rem;color:#8b949e;background:#0f1117;font-family:monospace;
+  padding-top:.65rem}
+.lane-track{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;flex:1;
+  padding:6px 8px;align-items:flex-start}
+
+/* Segments */
+.segment{flex-shrink:0;border-radius:10px;padding:.4rem .65rem;
+  transition:background .15s,min-width .2s;cursor:default;
+  display:flex;flex-direction:column;gap:4px}
+.segment[data-type="decision"]{background:#2dd4bf22;border:1px solid #2dd4bf}
+.segment[data-type="pattern"]{background:#60a5fa22;border:1px solid #60a5fa}
+.segment[data-type="failure"]{background:#f8717122;border:1px solid #f87171}
+.segment[data-type="dependency"]{background:#f472b622;border:1px solid #f472b6}
+.segment[data-type="context"]{background:#fbbf2422;border:1px solid #fbbf24}
+.seg-header{display:flex;align-items:center;gap:6px;cursor:pointer;
+  font-size:.75rem;font-weight:600;text-transform:uppercase;user-select:none;
+  white-space:nowrap}
+.segment[data-type="decision"] .seg-header{color:#2dd4bf}
+.segment[data-type="pattern"] .seg-header{color:#60a5fa}
+.segment[data-type="failure"] .seg-header{color:#f87171}
+.segment[data-type="dependency"] .seg-header{color:#f472b6}
+.segment[data-type="context"] .seg-header{color:#fbbf24}
+.seg-count{font-size:.7rem;opacity:.6}
+.seg-items{display:none;flex-direction:column;gap:2px;margin-top:2px}
+.segment.expanded .seg-items{display:flex}
+.seg-item{font-size:.78rem;color:#c9d1d9;padding:.2rem .4rem;border-radius:4px;
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:320px;transition:background .1s}
+.seg-item:hover{background:rgba(255,255,255,.07)}
+.seg-item .seg-item-date{color:#8b949e;margin-right:.4rem;font-size:.7rem}
+
+/* Tooltip */
+.tooltip{position:fixed;padding:.4rem .65rem;background:#30363d;color:#c9d1d9;
+  border-radius:6px;font-size:.75rem;pointer-events:none;z-index:10;
+  max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  display:none;border:1px solid #484f58}
+
+/* Detail panel */
+.panel-overlay{position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.5);z-index:20;display:none}
+.panel{position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100%;
+  background:#161b22;border-left:1px solid #30363d;z-index:21;display:none;
+  overflow-y:auto;padding:1.5rem}
+.panel .close{position:absolute;top:1rem;right:1rem;cursor:pointer;
+  font-size:1.2rem;color:#8b949e}
+.panel .badge{display:inline-block;padding:.15rem .5rem;border-radius:10px;
+  font-size:.7rem;font-weight:600;text-transform:uppercase;margin-bottom:.75rem}
+.panel .badge[data-type="decision"]{background:#2dd4bf22;color:#2dd4bf;
+  border:1px solid #2dd4bf}
+.panel .badge[data-type="pattern"]{background:#60a5fa22;color:#60a5fa;
+  border:1px solid #60a5fa}
+.panel .badge[data-type="failure"]{background:#f8717122;color:#f87171;
+  border:1px solid #f87171}
+.panel .badge[data-type="dependency"]{background:#f472b622;color:#f472b6;
+  border:1px solid #f472b6}
+.panel .badge[data-type="context"]{background:#fbbf2422;color:#fbbf24;
+  border:1px solid #fbbf24}
+.panel h2{font-size:1rem;margin-bottom:1rem;font-weight:600}
+.panel .meta{font-size:.8rem;color:#8b949e;margin-bottom:.5rem}
+.panel .content{font-size:.9rem;line-height:1.6;margin:1rem 0;
+  padding:1rem;background:#0d1117;border-radius:8px;border:1px solid #21262d}
+.panel .tag{display:inline-block;padding:.1rem .45rem;margin:.15rem;
+  border-radius:8px;font-size:.7rem;background:#21262d;color:#8b949e}
+.panel .supersedes-ref{font-size:.8rem;color:#8b949e;margin-top:.5rem;
+  border-top:1px solid #21262d;padding-top:.75rem}
+
+/* Empty state */
+.empty{text-align:center;padding:4rem 2rem;color:#484f58}
+.empty h2{font-size:1.3rem;margin-bottom:.5rem;color:#8b949e}
+</style>
+</head>
+<body>
+
+<div class="stats" id="stats"></div>
+<div class="filters" id="filters"></div>
+<div class="timeline-wrap">
+  <div class="timeline" id="timeline"></div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+<div class="panel-overlay" id="panel-overlay"></div>
+<div class="panel" id="panel"></div>
+
+<script>
+(function(){
+"use strict";
+const DATA = [{"id": "8ea6ec51df6a42bf8c8272c47521b476", "content": "The auth-service was migrated from Redis to Valkey. The change occurred in March 2024 due to a license modification of Redis. Valkey was selected as the replacement technology.", "type": "decision", "repos": ["auth-service"], "tags": ["redis", "valkey"], "created_at": "2026-03-15T00:03:20.300300+00:00", "supersedes": null}, {"id": "abcc7f9630c146cfb5fce0d3c7541a01", "content": "FastMCP from PrefectHQ was selected. The decision was based on superior ergonomics and support for 70% of MCP servers. The official SDK was not utilized.", "type": "decision", "repos": ["distill-mcp"], "tags": ["fastmcp", "mcp", "prefecthq"], "created_at": "2026-03-15T00:12:54.545337+00:00", "supersedes": null}, {"id": "1e5befdff2a1423a8e74ee4cf3e89ae5", "content": "The distill-mcp codebase utilizes Clean Architecture with three Protocol interfaces in domain/ports.py: StoragePort, EmbeddingPort, and DistillerPort. Services in domain/services.py depend solely on ports, and adapters implement these ports. Dependency injection occurs in __main__.py with SqliteStore, OllamaEmbedder, and OllamaDistiller instantiated and passed to MemoryService.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["architecture", "clean-architecture", "ports-adapters"], "created_at": "2026-03-15T00:18:05.660219+00:00", "supersedes": null}, {"id": "d52e40cb38b8451484cbf1462644c648", "content": "Search in distill-mcp utilizes hybrid retrieval combining FTS5 full-text search on SQLite with cosine vector search on LanceDB, integrating Reciprocal Rank Fusion (RRF, k=60). FTS queries are sanitized via OR phrase conversion, and RRF scoring employs the formula score = sum of 1/(k+rank) per list. Boosted IDs are identified in both FTS and vector results, managed by the rrf_merge function in sqlite_store.py with associated tests in test_rrf.py.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["search", "rrf", "hybrid-search", "fts5", "lancedb"], "created_at": "2026-03-15T00:18:08.600728+00:00", "supersedes": null}, {"id": "e41dd5e5d4bc40328ed47292e510d40a", "content": "The distill-mcp local backend employs dual storage. SQLite manages a memories table containing structured data and utilizes a unicode61 tokenizer. LanceDB is utilized for 768-dim vector similarity search.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["storage", "sqlite", "lancedb", "schema"], "created_at": "2026-03-15T00:18:12.100362+00:00", "supersedes": null}, {"id": "d5caa11d1f2448eea58c4f1fcc1d884e", "content": "The ollama_distill.py script utilizes an 8-rule distillation prompt. Gemma3:4b is the default model employed. Ten golden-pair integration tests in test_distill.py verify the rules against Ollama, with these tests skipped in CI due to @pytest.mark.ollama.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["distillation", "privacy", "ollama", "testing"], "created_at": "2026-03-15T00:18:26.281295+00:00", "supersedes": null}, {"id": "51d32d827f884f16847c14cb6bf0261b", "content": "The distill-mcp project contains approximately 700 lines of source code and 284 lines of tests. PrefectHQ FastMCP, Pydantic, structlog, httpx, and LanceDB are utilized for the project. uv package manager, ruff, ty type checker (Astral), and gitleaks are used for build tooling and CI runs on GitHub Actions with ruff + pytest.", "type": "context", "repos": ["distill-mcp"], "tags": ["tooling", "dependencies", "ci", "project-size"], "created_at": "2026-03-15T00:18:31.894077+00:00", "supersedes": null}, {"id": "4fc95e103c5345b4a4314ac104c56aff", "content": "The distill-mcp dedup mechanism utilizes cosine similarity with a 0.95 threshold. StoragePort.check_duplicate() queries LanceDB for top-5 nearest vectors, receiving distance values representing 1 - cosine similarity. Distance values greater than or equal to 0.05 indicate similarity below the threshold within MemoryService.remember().", "type": "pattern", "repos": ["distill-mcp"], "tags": ["dedup", "cosine-similarity", "lancedb"], "created_at": "2026-03-15T00:18:35.027028+00:00", "supersedes": null}, {"id": "cc51c89800704e54b5798524acedeb4a", "content": "In distill-mcp, MemoryService.remember() utilizes three code paths. The first path, distill\u2192embed\u2192dedup\u2192save, returns status=saved with a new UUID. Unit tests in test_remember_flow.py employ fake ports and a call_log list to verify the method call sequence for each path.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["remember-flow", "orchestration", "services"], "created_at": "2026-03-15T00:18:48.606526+00:00", "supersedes": null}, {"id": "fab1919ecb7941c5a4f0b4d43573805b", "content": "The distill-mcp update flow in MemoryService.update() retrieves the old memory to preserve its type and repos/tags. New content is distilled and embedded, and a new memory is saved with supersedes=old_id. The old memory is subsequently soft-deleted, creating an audit trail via the memories table's supersedes column.", "type": "pattern", "repos": ["distill-mcp"], "tags": ["update-flow", "supersedes", "audit-trail"], "created_at": "2026-03-15T00:18:51.731735+00:00", "supersedes": null}, {"id": "4968900e59ff41d78c6eff602c1873bc", "content": "AxiomVault is a cross-platform encrypted vault system developed in Rust. Version 0.1.0 includes XChaCha20-Poly1305 authenticated encryption and Argon2id key derivation. FUSE filesystem mounting is supported on Linux/macOS.", "type": "project-overview", "repos": ["distill"], "tags": ["axiom-vault", "overview", "encryption", "rust"], "created_at": "2026-03-15T00:35:59.070307+00:00", "supersedes": null}, {"id": "6d37e80c3d664ba9bad038a142fb2189", "content": "AxiomVault architecture is a layered modular Rust workspace with 13 crates. Core libraries include common, crypto, vault, storage, sync, fuse, and ffi. Clients consist of a Tauri 2.0 desktop app with SQLite indexing, an iOS SwiftUI app using FFI, an Android Kotlin Compose app utilizing JNI, and a command-line interface.", "type": "architecture", "repos": ["distill"], "tags": ["axiom-vault", "architecture", "rust", "workspace", "crates"], "created_at": "2026-03-15T00:35:59.703850+00:00", "supersedes": null}, {"id": "79a062b815ba4227ad1ddead812341aa", "content": "The AxiomVault tech stack utilizes Rust as the primary language alongside Swift, Kotlin, and HTML/CSS/JS. Key Rust dependencies include Crypto, Async, Serialization, and Network libraries with specific version numbers. Cargo workspace builds are executed with targets for desktop, cli, core, ios, and install, utilizing XcodeGen for iOS and Gradle for Android.", "type": "tech-stack", "repos": ["distill"], "tags": ["axiom-vault", "tech-stack", "dependencies", "rust", "tauri"], "created_at": "2026-03-15T00:36:00.309878+00:00", "supersedes": null}, {"id": "b87fa8cd7cc84dedacaeb812a4680410", "content": "XChaCha20-Poly1305 encryption is utilized for file content with streaming capabilities and per-file nonce derivation. Argon2id is employed for password-to-key derivation with configurable strengths. The platform utilizes Keychain on iOS, Android Keystore, and a Local SQLite index on Desktop for secure storage.", "type": "security", "repos": ["distill"], "tags": ["axiom-vault", "security", "encryption", "key-management", "cryptography"], "created_at": "2026-03-15T00:36:01.678593+00:00", "supersedes": null}, {"id": "a0bf03e00846428ba9c830f0b3762eaf", "content": "make desktop and make desktop-release build Tauri desktop app using auto-detected FUSE. The cli tool, core libraries, and ios XCFramework are built with make cli, make core, and make ios respectively. Cargo test, clippy, and fmt are executed on every push via rust-ci.yml, while PR validation is handled by pr-check.yml.", "type": "build-and-test", "repos": ["distill"], "tags": ["axiom-vault", "build", "testing", "ci-cd", "makefile"], "created_at": "2026-03-15T00:36:09.580687+00:00", "supersedes": null}, {"id": "034a549fa1e84ba5a2c86553fccd608f", "content": "The MCP server implements Clean Architecture. The domain layer utilizes zero dependencies on frameworks or adapters. Server.py depends on domain/services.py, which in turn depends on domain/ports.py, with adapters providing external connections.", "type": "decision", "repos": ["distill"], "tags": ["architecture", "clean-architecture"], "created_at": "2026-03-15T01:05:22.924488+00:00", "supersedes": null}, {"id": "0a01af735b9346a28fdd55a84d2c1f10", "content": "Raw developer text is sent to localhost Ollama for distillation. The distilled factual output is stored in the team database. A local LLM serves as the primary privacy component.", "type": "decision", "repos": ["distill"], "tags": ["privacy", "ollama", "distillation"], "created_at": "2026-03-15T01:05:23.322621+00:00", "supersedes": null}, {"id": "1f9cae9ab008481a8beb3adf4a7a6fd1", "content": "The domain layer utilizes Protocol-based ports including StoragePort, EmbeddingPort, and DistillerPort. Dataclasses named Memory and SearchResult are employed for models. Pydantic is applied exclusively for configuration settings.", "type": "pattern", "repos": ["distill"], "tags": ["architecture", "domain", "ports"], "created_at": "2026-03-15T01:05:25.509040+00:00", "supersedes": null}, {"id": "bca199a44b6844b0b2de757b1cf35e22", "content": "The local storage backend utilizes SQLite with FTS5 for full-text search and LanceDB for vector similarity. Reciprocal Rank Fusion (RRF, k=60) merges FTS5 and vector results. A dual-store approach was implemented to maintain a zero-cost local backend supporting semantic search.", "type": "decision", "repos": ["distill"], "tags": ["storage", "sqlite", "lancedb", "hybrid-search", "rrf"], "created_at": "2026-03-15T01:05:31.916110+00:00", "supersedes": null}, {"id": "a1b6edbf05e842b5a026f9c300b6be57", "content": "FastMCP was selected via pip install fastmcp. The selection was based on a simpler decorator API, automatic schema generation from type hints, a built-in dev inspector, and the Claude Code installation command. Plain functions and docstrings are utilized for LLM tool descriptions.", "type": "decision", "repos": ["distill"], "tags": ["fastmcp", "mcp", "framework"], "created_at": "2026-03-15T01:05:34.969887+00:00", "supersedes": null}, {"id": "76b692dbd703424ab65d480fe59de8d9", "content": "Twenty-six CRUD/integration tests were replaced with eleven focused tests. The tests target RRF ranking correctness, cosine similarity dedup gate with a threshold of 0.95, and the remember call chain. The rrf_merge function was extracted as a public pure function for unit testing.", "type": "decision", "repos": ["distill"], "tags": ["testing", "rrf", "dedup"], "created_at": "2026-03-15T01:05:37.748525+00:00", "supersedes": null}, {"id": "5ff32106ea604586b164434014723032", "content": "The server parses git remote URLs to determine repository names when the \u201crepos\u201d parameter is not provided. Search\\_memory accepts an optional repo filter to scope results within a project. Claude Code can maintain cross-repo visibility with this feature.", "type": "pattern", "repos": ["distill"], "tags": ["repo-awareness", "search", "ux"], "created_at": "2026-03-15T01:05:39.694048+00:00", "supersedes": null}, {"id": "8135b18e5ac74f438af43d4e71038a52", "content": "ollama\\_distill.py utilizes the gemma3:4b model. Sentence count validation employs regex splitting on punctuation followed by whitespace. Output is capped at 1-3 sentences.", "type": "pattern", "repos": ["distill"], "tags": ["distillation", "ollama", "gemma3"], "created_at": "2026-03-15T01:05:53.243761+00:00", "supersedes": null}, {"id": "ab8360bbfdce4f4493c816c4212ecc3c", "content": "AxiomVault is a cross-platform encrypted vault system written in Rust. The core architecture utilizes a layered crate structure including axiomvault-common, axiomvault-crypto with Argon2id and XChaCha20-Poly1305, and axiomvault-storage supporting pluggable backends. Clients are implemented using SwiftUI for iOS/macOS, Kotlin Compose for Android, Tauri for desktop, and GTK4/libadwaita for Linux.", "type": "context", "repos": ["axiom-vault"], "tags": ["architecture", "overview"], "created_at": "2026-03-15T01:15:53.840266+00:00", "supersedes": null}, {"id": "5744ebcd90694d04a374ba432d0e4936", "content": "Argon2id was selected for key derivation with configurable parameters. XChaCha20-Poly1305 was chosen for AEAD encryption, alongside streaming encryption with chunked processing for large files. The zeroize crate is utilized for automatic key zeroization on drop, and base64 encoding is applied to encrypted filenames.", "type": "decision", "repos": ["axiom-vault"], "tags": ["crypto", "security"], "created_at": "2026-03-15T01:15:54.855447+00:00", "supersedes": null}, {"id": "387dbede6cbc4d7f972ee6678445ae96", "content": "rustls-tls was selected for the reqwest HTTP client. This decision avoided the need for system OpenSSL development libraries (libssl-dev/openssl-devel). The selection facilitated builds on a wider range of platforms.", "type": "decision", "repos": ["axiom-vault"], "tags": ["dependencies", "tls"], "created_at": "2026-03-15T01:15:56.709006+00:00", "supersedes": null}, {"id": "77ec3d0830f14fddb330deb99dcae41d", "content": "An abstract StorageProvider trait has been implemented with pluggable backends. Local filesystem, in-memory, Google Drive, Dropbox, OneDrive, and iCloud Drive providers have been implemented. ProviderRegistry utilizes factory functions for all registered providers.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["storage", "architecture"], "created_at": "2026-03-15T01:16:03.194902+00:00", "supersedes": null}, {"id": "a4387a28699341c6bc01ce735c69ba4d", "content": "The engine design supports on-demand and periodic scheduling modes. Local staging areas are utilized for atomic writes with temporary objects. Conflict detection employs etags and revision IDs, implementing KeepBoth, PreferLocal, and PreferRemote resolution strategies.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["sync", "architecture"], "created_at": "2026-03-15T01:16:06.735620+00:00", "supersedes": null}, {"id": "fa7a4de24ba644a9a1e46c26318513b5", "content": "A key model was refactored to support recovery keys. A random 256-bit master key is generated and wrapped with a password-derived KEK and a recovery-derived KEK. The recovery key is encoded as 24 BIP39 mnemonic words.", "type": "decision", "repos": ["axiom-vault"], "tags": ["crypto", "recovery", "key-model"], "created_at": "2026-03-15T01:16:08.800366+00:00", "supersedes": null}, {"id": "aa46aceb83b642e092d2c6ba04bd99d5", "content": "axiomvault-app crate provides AppService as a single entry point for platform UI shells. The AppService wraps vault, storage, and sync subsystems into a stateful API utilizing tokio channels for cross-layer state synchronization. DTOs at the UI boundary are serializable, and AppError maps internal errors to user-facing categories.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["architecture", "facade", "app"], "created_at": "2026-03-15T01:16:17.210026+00:00", "supersedes": null}, {"id": "a1e2f25a779a4d5da939215cba0f9eba", "content": "The FFI bridge strategy utilized cbindgen for Swift/Rust interop. The FFI crate delegates to an AppService facade, avoiding direct access to vault/crypto/storage. For the Linux GTK4 client, no FFI was required, relying on axiomvault-app and a glib::MainContext bridge.", "type": "decision", "repos": ["axiom-vault"], "tags": ["ffi", "architecture", "bridge"], "created_at": "2026-03-15T01:16:21.747538+00:00", "supersedes": null}, {"id": "93f2192c0e324519bc154bee0cdfc86a", "content": "Clients/ios/ and clients/macos/ were initially separate. A unified clients/apple/ client was created with shared code and platform-specific targets. XcodeGen was utilized with 3 targets and a Scripts/build-apple.sh build script was implemented.", "type": "decision", "repos": ["axiom-vault"], "tags": ["apple", "ios", "macos", "clients"], "created_at": "2026-03-15T01:16:26.731686+00:00", "supersedes": null}, {"id": "34ab19c386b4493fb2d2ea062a3ad31e", "content": "A native macOS client was implemented, replicating the design of Cryptomator. The client utilizes a Rust XCFramework core shared with the iOS client and includes a File Provider extension for Finder integration. The Tauri desktop client remains available as a secondary UI.", "type": "decision", "repos": ["axiom-vault"], "tags": ["macos", "desktop", "tauri"], "created_at": "2026-03-15T01:16:31.800925+00:00", "supersedes": null}, {"id": "0a93882619bc4023bfea28c0dbc96d3b", "content": "core/fuse implements VaultFilesystem (fuser::Filesystem trait) translating vault operations to filesystem calls. Mount and unmount functionality is supported on Linux and macOS. A Mutex was wrapped around a rusqlite Connection for thread safety.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["fuse", "filesystem"], "created_at": "2026-03-15T01:16:36.032934+00:00", "supersedes": null}, {"id": "e8fd2dcfd9ce4b5f9fc2144d91a55ef4", "content": "A migration framework supports versioned upgrades of vault format with backup and rollback capabilities. The CLI 'migrate' command includes a --dry-run option. FFI bindings are provided for migration checks, and a v1.0\u2192v1.1 migration placeholder is implemented.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["migration", "vault-format"], "created_at": "2026-03-15T01:16:38.505233+00:00", "supersedes": null}, {"id": "dd0905534b7f4d0492adef02bd4a7816", "content": "Log redaction processes redacted plaintext vault paths from local_index, migration, CLI, and desktop logs. Key/secret handling involved zeroizing plaintext after constant-time comparison and decrypted stream/tree chunks. CI utilizes clippy with -D warnings and security-audit in the ci-success gate.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["security", "hardening"], "created_at": "2026-03-15T01:16:46.685158+00:00", "supersedes": null}, {"id": "12e37c082dac438d9c7a59e2d00ecf23", "content": "Change\\_password utilizes the session's in-memory master key directly. Empty-password validation was implemented. A self-verification round-trip ensures the master key integrity following password changes, along with configuration serialization and recovery key functionality.", "type": "decision", "repos": ["axiom-vault"], "tags": ["security", "password", "crypto"], "created_at": "2026-03-15T01:16:51.053654+00:00", "supersedes": null}, {"id": "27ab494b489e4a04b04326ac34354554", "content": "AEAD index fix addressed an incorrect nonce counter issue in streaming encryption, potentially preventing data corruption. Chunk size validation from stream headers was implemented to mitigate denial-of-service attacks. Google OAuth credentials were removed from the source code.", "type": "failure", "repos": ["axiom-vault"], "tags": ["security", "bugs"], "created_at": "2026-03-15T01:16:54.892323+00:00", "supersedes": null}, {"id": "c8c51c98b017465696202029395de386", "content": "The license was updated from MIT to Apache 2.0. A NOTICE file was included for compliance purposes. The project repository is located at github.com/5queezer/axiom-vault.", "type": "decision", "repos": ["axiom-vault"], "tags": ["license", "legal"], "created_at": "2026-03-15T01:16:59.237013+00:00", "supersedes": null}, {"id": "247b2bc9bd4147709615b75e2e255f4e", "content": "macOS utilizes SwiftUI with File Provider for Finder integration, while the Tauri-based desktop client serves as a cross-platform fallback. The Linux client employs GTK4/libadwaita, consuming axiomvault-app as a Rust dependency without FFI. Android utilizes Kotlin Compose with a JNI\u2192C++\u2192Rust FFI bridge, and packaging includes AppImage, .deb (cargo-deb), and Flatpak for Linux, alongside .dmg for macOS with signing and notarization.", "type": "decision", "repos": ["axiom-vault"], "tags": ["clients", "platform", "packaging"], "created_at": "2026-03-15T01:17:03.795727+00:00", "supersedes": null}, {"id": "58e6c2279beb49739127c0ac25d8e3ff", "content": "The minimum deployment target for iOS is 16.0. Export compliance keys are exported in Info.plist. OAuth is secured with Keychain storage and PKCE.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["ios", "security", "appstore"], "created_at": "2026-03-15T01:17:07.431767+00:00", "supersedes": null}, {"id": "2ca373b5d9094cf3991c6f1bcf08f639", "content": "Content Security Policy restrictions were implemented for Tauri desktop security. IPC commands now necessitate explicit allowlisting, and custom protocol rendering requires bundling Vue locally. Race conditions were addressed by mounting Vue immediately with Tauri API detection.", "type": "decision", "repos": ["axiom-vault"], "tags": ["tauri", "security", "desktop"], "created_at": "2026-03-15T01:17:14.031636+00:00", "supersedes": null}, {"id": "c929fa5b0fa94293b2f673c93ef1efd5", "content": "Tauri on Linux utilizes an X11 backend due to WebKit compatibility with Wayland. GPU acceleration was disabled to resolve blank screen issues on certain configurations. A Makefile includes install/uninstall targets supporting PREFIX/DESTDIR.", "type": "failure", "repos": ["axiom-vault"], "tags": ["linux", "tauri", "desktop"], "created_at": "2026-03-15T01:17:17.081673+00:00", "supersedes": null}, {"id": "fb37237ada7442a595427cbbce7fc9d6", "content": "A GTK4 Linux client utilizes an async bridging pattern with a tokio runtime spawned separately. spawn_async() bridges tokio tasks to the GTK main context. The AppService is stored behind an Arc (not Clone) and event subscriptions forward AppEvent to the UI via an mpsc channel to glib::MainContext.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["linux", "gtk", "async"], "created_at": "2026-03-15T01:17:21.797377+00:00", "supersedes": null}, {"id": "f2e68f31b2ae4420a607f7f27897f290", "content": "Pre-commit hooks were established for cargo fmt check, clippy with deny warnings, and unsafe code review. CI runs include cargo fmt, clippy with -D warnings, security-audit (cargo-audit), and all tests. A bash injection vulnerability in PR metadata check was addressed.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["ci", "quality", "hooks"], "created_at": "2026-03-15T01:17:28.143167+00:00", "supersedes": null}, {"id": "2938784f807d438b88c8035dc5fc90cd", "content": "A health check and integrity verification system for encrypted files within vaults was added. Verification of vault tree structure consistency is also included. Offline caching was implemented for the File Provider extension to enable operation without network connectivity.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["health", "integrity", "offline"], "created_at": "2026-03-15T01:17:30.653591+00:00", "supersedes": null}, {"id": "b76844da320c4d3093362efdf1798a6b", "content": "AxiomVault development occurred in phases: M1 involved core crypto, vault, storage, and CLI development. Subsequent milestones included M2 with Google Drive storage, M3 with the sync engine, and M4 with iOS and Android bindings. Later phases added macOS, GTK4 Linux, and an AppService facade layer.", "type": "context", "repos": ["axiom-vault"], "tags": ["milestones", "development-phases"], "created_at": "2026-03-15T01:39:57.467004+00:00", "supersedes": null}, {"id": "ad57f795f6cd49238b4983c96f554f7a", "content": "Vault tree persistence was implemented to resolve a critical usability bug. The vault tree is now saved to TREE_FILENAME after tree-modifying operations, including create/update/delete file and create/delete directory actions. The vault tree is loaded upon vault open.", "type": "failure", "repos": ["axiom-vault"], "tags": ["vault", "persistence", "tree"], "created_at": "2026-03-15T01:39:59.592267+00:00", "supersedes": null}, {"id": "514b36f02a7a4e7990c1d886a0ebe1da", "content": "Double key derivation was eliminated from vault unlock. VaultSession::unlock() previously called config.verify_password() (Argon2id) and derive_key() separately. The pattern was applied to change_password, recover_vault, and migrate_to_v1_1 to avoid redundant KDF rounds.", "type": "decision", "repos": ["axiom-vault"], "tags": ["performance", "crypto", "kdf"], "created_at": "2026-03-15T01:40:03.146058+00:00", "supersedes": null}, {"id": "6b33b638fb024da8b855a870911d2fbe", "content": "Constant-time password comparison utilizing the subtle crate replaced a manual byte-comparison loop in verify_password(). Subtle::ConstantTimeEq with ct_eq() was implemented. Atomic file writes in LocalProvider employ a temp-then-rename pattern for POSIX systems, followed by cleanup on failure.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["security", "crypto", "storage"], "created_at": "2026-03-15T01:40:10.318154+00:00", "supersedes": null}, {"id": "a096d02cf985421a9e06c0919a0994a5", "content": "The auto-lock timer for vaults offers configurable inactivity timeouts of 1, 5, 15 minutes (default), 30 minutes, or Never. The timer resets upon navigation and file operations. macOS locks occur on sleep or screen lock via NSWorkspace notifications, while iOS locks happen when the app enters the background based on autoLockDuration.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["security", "auto-lock", "apple"], "created_at": "2026-03-15T01:40:18.931800+00:00", "supersedes": null}, {"id": "0d7bf923d36f4e15a6270decb295c09a", "content": "kSecAttrAccessControlBiometryCurrentSet is used for Apple clients, invalidating upon biometric changes. SHA-256 hash of a vault path is utilized as a keychain account key. SecItemCopyMatching is executed on a background queue to prevent blocking the main thread.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["security", "biometric", "keychain", "apple"], "created_at": "2026-03-15T01:40:21.234591+00:00", "supersedes": null}, {"id": "2a9c0f82e61b4f85acbd66cc043ee3b6", "content": "CacheManager with JSON manifest tracking and LRU eviction (default 500MB limit) was implemented for the File Provider extension. SHA-256 is used for cache filenames, and iOS sets FileProtection.complete on cached decrypted files. Concurrent DispatchQueue with barrier writes maintains file I/O outside the critical section.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["caching", "file-provider", "security", "apple"], "created_at": "2026-03-15T01:40:28.359132+00:00", "supersedes": null}, {"id": "07e8035a4db1429885851d2ae54fa54e", "content": "The business logic was refactored into axiomvault-app. LocalIndex was moved from the Tauri desktop client to core/app. Fifty integration tests cover the AppService contract including vault lifecycle and file CRUD operations.", "type": "decision", "repos": ["axiom-vault"], "tags": ["refactoring", "app-service", "testing"], "created_at": "2026-03-15T01:40:33.678623+00:00", "supersedes": null}, {"id": "c0205da8000c4d50b483218f817f2769", "content": "Scripts/check-versions.sh enforces version consistency across release surfaces. Cargo.toml, project.yml, build.gradle.kts, and tauri.conf.json are validated for agreement. iOS Info.plist utilizes $(MARKETING_VERSION) and $(CURRENT_PROJECT_VERSION) build settings.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["versioning", "release", "ci"], "created_at": "2026-03-15T01:40:37.062122+00:00", "supersedes": null}, {"id": "3f33b730b4cf42d294415904603a3bca", "content": "Sync provider selection is a UI-only feature. The SyncProvider enum (None, iCloud Drive, Google Drive, WebDAV) utilizes per-vault persistence. isSyncAvailable returns false until backend integration is complete, and isProviderSelected performs a separate check.", "type": "context", "repos": ["axiom-vault"], "tags": ["sync", "ui", "wip"], "created_at": "2026-03-15T01:40:42.558813+00:00", "supersedes": null}, {"id": "8da7e51bf1d14143a4b40a2d4a6c52f2", "content": "A computer-use test harness facilitates interactive UI testing of a Tauri desktop application. The harness employs Claude's computer use API, utilizing screenshots and mouse/keyboard actions via xdotool and scrot under Xvfb. Thirty predefined scenarios are included, addressing smoke tests, vault CRUD, form validation, file operations, modal interactions, and end-to-end workflows.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["testing", "computer-use", "desktop"], "created_at": "2026-03-15T01:40:45.904865+00:00", "supersedes": null}, {"id": "9316b64eb5e14ee3b1479c67d4183f3d", "content": "SECURITY.md and docs/threat-model.md document assets, threat actors, logging policy, crypto primitives, and out-of-scope items. The threat model explicitly notes that zeroization is best-effort, with OS potentially paging memory to swap. A security disclosure process is defined in SECURITY.md.", "type": "context", "repos": ["axiom-vault"], "tags": ["security", "documentation", "threat-model"], "created_at": "2026-03-15T01:40:48.659328+00:00", "supersedes": null}, {"id": "22cb0eeb967c4fd8a0a4f5d37a5e7425", "content": "Rand 0.10 migration involved RngCore::fill_bytes \u2192 RngExt::fill. Oauth2 5.0 introduced builder-pattern BasicClient and an explicit HTTP client. Rusqlite 0.38 included a u64\u2192i64 cast at SQLite boundary.", "type": "dependency", "repos": ["axiom-vault"], "tags": ["dependencies", "migration", "breaking-changes"], "created_at": "2026-03-15T01:40:56.585016+00:00", "supersedes": null}, {"id": "0d426998dfcc478e99057298bdf64de5", "content": "Google Drive API query strings require escaping single quotes to prevent injection. Google OAuth credentials were initially hardcoded in source and had to be removed. The gdrive-auth flow opens a browser automatically and runs a local callback server.", "type": "failure", "repos": ["axiom-vault"], "tags": ["google-drive", "security", "auth"], "created_at": "2026-03-15T01:41:00.052861+00:00", "supersedes": null}, {"id": "bcb5de8f884540969192d1cbd752ac8e", "content": "CLI supports shell completion generation via `axiomvault completions <shell>` for zsh, bash, fish, elvish, and powershell using clap_complete. Evaluation of `axiomvault completions zsh` is supported. The AXIOMVAULT_PASSWORD environment variable is supported for non-interactive vault operations.", "type": "pattern", "repos": ["axiom-vault"], "tags": ["cli", "shell", "usability"], "created_at": "2026-03-15T01:41:02.920445+00:00", "supersedes": null}, {"id": "3ce1cd6e78fc43f8ada0f67733cc5c6e", "content": "The FastMCP server utilizes the `instructions` parameter in the constructor for auto-store and auto-retrieve functionality. Decisions and corrections are automatically stored via the `remember` function and memory searches are performed before architecture choices are proposed or new tasks initiated. The MCP handshake transmits instructions with zero user configuration.", "type": "pattern", "repos": ["distill"], "tags": ["mcp", "instructions", "auto-store", "auto-retrieve", "fastmcp"], "created_at": "2026-03-15T01:42:00.428994+00:00", "supersedes": null}, {"id": "b7f99bc3aa3f4967955d9fefb7adf7bf", "content": "The Python package at src/distill_mcp/skills/ contains Claude Code skills. The CLI command `distill install-skills` utilizes importlib.resources to copy skills to ~/.claude/skills/. Symlinks are created within ~/.claude/skills/ to the package source directory for local development.", "type": "pattern", "repos": ["distill"], "tags": ["skills", "cli", "packaging", "importlib"], "created_at": "2026-03-15T01:42:03.114322+00:00", "supersedes": null}, {"id": "5a6dedd016ce40f790f2fddef2ad18d0", "content": "The distillation prompt rejects non-software engineering content such as moods and personal feelings. The distiller outputs a rejection token when no technical facts are found, and the service detects this token (case-insensitive, underscores normalized) and returns status=rejected. This behavior was hardened specifically for gemma3:4b which initially allowed non-technical content to pass through.", "type": "decision", "repos": ["distill"], "tags": ["distillation", "privacy", "gemma3", "validation"], "created_at": "2026-03-15T01:42:15.972530+00:00", "supersedes": null}, {"id": "5ef4340116114d4fa699b28dbcc92045", "content": "ZeroClaw is a Rust-first autonomous agent runtime with a trait-driven, modular architecture. Initial release was v0.1.0, optimizing for performance, efficiency, stability, extensibility, sustainability, and security. The CLI entrypoint is in src/main.rs with command routing, and src/lib.rs provides module exports and command enums.", "type": "decision", "repos": ["zeroclaw"], "tags": ["architecture", "core", "traits"], "created_at": "2026-03-15T02:11:43.824462+00:00", "supersedes": null}, {"id": "6726d4e5f45749dfaecbca14069ce76c", "content": "The memory system evolved through three phases. Phase 1 incorporated SQLite with FTS5 full-text search, vector search, and an embedding cache. Phase 2 involved Lucid memory integration with optional backends, and Phase 3 added configurable PostgreSQL and Qdrant vector storage backends.", "type": "decision", "repos": ["zeroclaw"], "tags": ["memory", "architecture", "sqlite", "postgres", "vector-search"], "created_at": "2026-03-15T02:11:44.360301+00:00", "supersedes": null}, {"id": "e0abdd55ccc840ba8623c703c1f04f90", "content": "A ReliableProvider wrapper was added with model failover chain and API key rotation functionality. Native tool-call API support (chat\\_with\\_tools) was implemented, alongside a multi-model router for task-based routing. ChatResponse is unified across all providers with usage tracking and a Chinese provider endpoint split was created.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["providers", "architecture", "failover", "tool-calling"], "created_at": "2026-03-15T02:11:44.937158+00:00", "supersedes": null}, {"id": "68708543082c43f6b02d5b52e41308f9", "content": "The channel system supports Telegram, Discord, Slack, WhatsApp (Business API + Web), Email (IMAP/SMTP), IRC, Lark/Feishu (split providers), DingTalk (Stream Mode), QQ Official, Signal (via signal-cli JSON-RPC), Matrix (with E2EE, reactions, threading, file upload, multi-room), Mattermost, Nextcloud Talk, Nostr (NIP-04/NIP-17), WeCom (WeChat Enterprise), Linq (iMessage/RCS/SMS), ClawdTalk (voice via Telnyx), WATI WhatsApp Business. Inbound messages are processed concurrently. A SendMessage struct is unified across all channels. Per-sender conversation history is maintained. Mention-only configuration is available for group channels. Typing indicators are implemented across channels. Ack reactions are configurable. The /new command clears history. The /model command facilitates runtime provider switching.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["channels", "architecture", "messaging"], "created_at": "2026-03-15T02:11:46.174021+00:00", "supersedes": null}, {"id": "6317a81e710d441187a236585ef37f11", "content": "The ChaCha20-Poly1305 AEAD encryption was implemented to replace the XOR cipher. CSPRNG with rejection sampling was utilized for pairing code generation, addressing a weak random issue. Shell command validation was configured with an allowlist and restrictions on chaining and path arguments.", "type": "decision", "repos": ["zeroclaw"], "tags": ["security", "cryptography", "hardening"], "created_at": "2026-03-15T02:11:59.893247+00:00", "supersedes": null}, {"id": "2b9a60ba9baf402999604c1f801f47e8", "content": "Security policy system includes shell risk classification with approval gates and action throttling. Action budget enforcement is present in file_read, file_write, and scheduler. Non-CLI channels deny unapproved tool calls via non_cli_excluded_tools config.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["security", "policy", "access-control"], "created_at": "2026-03-15T02:12:06.461807+00:00", "supersedes": null}, {"id": "6edcc15084f64e639c1ad2d7f801c903", "content": "The tool system incorporates a shell with a security policy and file reading functionality with a 10MB limit, PDF extraction, binary fallback, line numbers, and partial reading. The system includes file writing with a symlink check, file editing for precise in-place text replacement, and a memory store utilizing custom categories. Browser functionality is provided by a Vercel agent-browser with an optional fantoccini rust-native backend, alongside HTTP requests with configurable timeouts and header redaction.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["tools", "architecture"], "created_at": "2026-03-15T02:12:17.658249+00:00", "supersedes": null}, {"id": "2418b95484a645378aaa609f3ea94bc1", "content": "Multi-turn conversation history and tool execution were added. Tool-call parsing handles XML, native API, GLM, MiniMax FunctionCall, Perl-style regex, and markdown fence formats. Independent tool calls execute concurrently, with auto-compaction running before history trimming.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["agent", "tool-calling", "parsing"], "created_at": "2026-03-15T02:12:24.536929+00:00", "supersedes": null}, {"id": "8f34a45d9e5044dab8467c64d45bfd8f", "content": "The gateway transitioned from a webhook server to a full platform. Per-endpoint rate limiting with a SlidingWindowRateLimiter was implemented, alongside a webhook idempotency store and pairing token persistence. A React web dashboard with an electric blue restyle was integrated, and default port settings were updated to 42617.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["gateway", "architecture", "api"], "created_at": "2026-03-15T02:12:29.887220+00:00", "supersedes": null}, {"id": "b02addf52fe54c378d67d0671181207e", "content": "GitHub Actions were initially utilized for CI/CD. Blacksmith cloud runners were adopted to reduce costs by approximately 60-65%. SHA256 digests were applied to Docker base images and release artifacts, along with keyless signing via Cosign and SBOM generation using Syft.", "type": "decision", "repos": ["zeroclaw"], "tags": ["ci", "devops", "security"], "created_at": "2026-03-15T02:12:39.925227+00:00", "supersedes": null}, {"id": "01b70e31380d4ba8936ab5225058bc5e", "content": "Feature gating for matrix channel and hardware was implemented to reduce binary size and build time. A release-fast profile was established for powerful build machines, and cargo-slicer was initially attempted before removal due to rustc-driver drift issues. The builder was pinned to bookworm/trixie via a Dockerfile to prevent glibc mismatches.", "type": "decision", "repos": ["zeroclaw"], "tags": ["build", "optimization", "docker"], "created_at": "2026-03-15T02:12:47.163576+00:00", "supersedes": null}, {"id": "63e2acc843e84e859e30f0e2705b4e46", "content": "AIEOS identity support was added, removed, and subsequently re-added via commit 5476195. Cargo-slicer was added for fast builds, removed due to issues with rustc-driver, and subsequently re-added. The branch model transitioned from main \u2192 dev/main split \u2192 single master.", "type": "failure", "repos": ["zeroclaw"], "tags": ["reverted", "failures", "lessons"], "created_at": "2026-03-15T02:12:52.583430+00:00", "supersedes": null}, {"id": "4f02d1e6cfbd49a18bf2e7153fb0c841", "content": "OpenTelemetry tracing and metrics observer was implemented. Prometheus metrics backend utilizes the /metrics endpoint. The blocking OTLP HTTP exporter client prevents reactor panics in non-tokio contexts.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["observability", "tracing", "prometheus"], "created_at": "2026-03-15T02:12:58.750524+00:00", "supersedes": null}, {"id": "110ff78fccfe49e6b103b822a59caa7c", "content": "The configuration system utilizes a TOML-based format with atomic writes and rollback-safe replacement. JSON Schema export is enabled via `zeroclaw config schema`. Env var overrides, including ZEROCLAW_WORKSPACE and ZEROCLAW_PROVIDER_URL, are supported alongside startup validation and channel secret encryption/decryption during save/load operations.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["config", "schema", "security"], "created_at": "2026-03-15T02:13:03.375529+00:00", "supersedes": null}, {"id": "686af2e2b6ab48df90970d857749e3ba", "content": "A HookHandler trait was implemented with a HookResult and HookRunner dispatcher. Integration occurred within the agent loop, channels, and gateway. The HooksConfig with BuiltinHooksConfig was added to the configuration schema.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["hooks", "extensibility"], "created_at": "2026-03-15T02:13:06.323295+00:00", "supersedes": null}, {"id": "b18e0a5b41d140ba8d69451534e7bf29", "content": "SkillForge offers automated skill discovery, evaluation, and integration through git repo support with SSH remotes. Open-skills sync is configurable and includes a static security audit upon skill install and load. XML content escaping is applied to skill prompts and tools injected into the agent system prompt, with cross-skill references permitted in audits.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["skills", "extensibility"], "created_at": "2026-03-15T02:13:10.437499+00:00", "supersedes": null}, {"id": "be3e71ad6a4541db8320edf6f2fa2a72", "content": "A native runtime system was implemented with Docker runtime support, including remote image pull and podman support with SELinux relabeling. Hardware peripherals support was added for STM32 and RPi GPIO via a Peripheral trait. A 32-bit system support was enabled via feature gates, alongside Windows headless daemon management through Task Scheduler.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["runtime", "docker", "hardware", "deployment"], "created_at": "2026-03-15T02:13:14.907782+00:00", "supersedes": null}, {"id": "1073d59ffcc646839cb110e303f484aa", "content": "The parking_lot::Mutex was replaced with std::sync::Mutex across the codebase. Rustls was adopted as the TLS implementation to resolve build issues. async-imap IDLE was superseded by the async-imap implementation, utilizing tokio as the asynchronous runtime.", "type": "dependency", "repos": ["zeroclaw"], "tags": ["dependencies", "crates"], "created_at": "2026-03-15T02:13:18.546397+00:00", "supersedes": null}, {"id": "3c120ff67ff244c5a7df1cacff3688ab", "content": "Version 0.2.1 of the \u201czeroclawlabs\u201d project is published on crates.io with a single master branch and a dual MIT + Apache-2.0 license. Docker images are available on GHCR, and Android targets (armv7 + aarch64) are defined in a release matrix. The project utilizes a topic-based directory layout for documentation with 30+ language translations and a five-level taxonomy for the test suite.", "type": "context", "repos": ["zeroclaw"], "tags": ["project-state", "release", "distribution"], "created_at": "2026-03-15T02:13:28.224471+00:00", "supersedes": null}, {"id": "0f5573f672b5479ba895d3e5e6e09d99", "content": "An interactive onboarding system with a 7-step setup was implemented. The quick flag enables non-interactive setup with a model override, and a reinit flag prevents config overwrite. Multiple OAuth flows, including Anthropic, Gemini, Copilot, MiniMax, Qwen-Code, and Codex flows, are supported, with auto-refresh of expired Gemini OAuth tokens in warmup.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["onboarding", "wizard", "oauth"], "created_at": "2026-03-15T02:13:32.695262+00:00", "supersedes": null}, {"id": "884881ca68f04a6ba4894dafbc175c50", "content": "env-var override tests exhibited parallel race conditions, and serial tests were implemented. Safe Unicode boundary truncation was applied across the codebase to address UTF-8 string truncation issues. Rusqlite parameterized reads replaced the iMessage sqlite CLI to prevent SQL injection vulnerabilities.", "type": "failure", "repos": ["zeroclaw"], "tags": ["bugs", "lessons-learned", "testing"], "created_at": "2026-03-15T02:13:38.396767+00:00", "supersedes": null}, {"id": "19536aceba2b4b3b857e34820febc55d", "content": "SQLite-backed cron scheduler with job type persistence was implemented. A composite index on `cron_runs(job_id, started_at)` was created for performance optimization. Transactions were used to wrap `record_run` INSERT and DELETE operations.", "type": "pattern", "repos": ["zeroclaw"], "tags": ["cron", "scheduler"], "created_at": "2026-03-15T02:13:42.716565+00:00", "supersedes": null}];
+
+if(!DATA.length){
+  document.getElementById("timeline").innerHTML =
+    '<div class="empty"><h2>No memories yet</h2><p>Use <code>remember</code> to start building your knowledge base.</p></div>';
+  document.getElementById("stats").innerHTML =
+    '<h1>Knowledge Timeline</h1><span class="stat">0 memories</span>';
+  return;
+}
+
+/* --- Build indexes --- */
+const byId = Object.create(null);
+DATA.forEach(m => { byId[m.id] = m; });
+
+const allRepos = [...new Set(DATA.flatMap(m => m.repos))].sort();
+const allTypes = [...new Set(DATA.map(m => m.type))].sort();
+const dates = DATA.map(m => new Date(m.created_at).getTime());
+const minTs = Math.min(...dates);
+const maxTs = Math.max(...dates);
+
+/* filter state */
+const activeTypes = new Set(allTypes);
+const activeRepos = new Set(allRepos);
+
+/* --- Stats --- */
+const earliest = new Date(minTs).toISOString().slice(0,10);
+const latest = new Date(maxTs).toISOString().slice(0,10);
+document.getElementById("stats").innerHTML =
+  `<h1>Knowledge Timeline</h1>
+   <span class="stat"><b>${DATA.length}</b> memories</span>
+   <span class="stat"><b>${allRepos.length}</b> repos</span>
+   <span class="stat">${earliest} &mdash; ${latest}</span>`;
+
+/* --- Filters --- */
+function renderFilters(){
+  const f = document.getElementById("filters");
+  let h = '<span class="chip-label">Type:</span>';
+  allTypes.forEach(t => {
+    const on = activeTypes.has(t);
+    h += `<span class="chip ${on?"":"off"}" data-type="${t}" data-filter="type">${t}</span>`;
+  });
+  h += '<span class="chip-label" style="margin-left:.75rem">Repo:</span>';
+  allRepos.forEach(r => {
+    const on = activeRepos.has(r);
+    h += `<span class="chip ${on?"":"off"}" data-filter="repo" data-repo="${r}">${r}</span>`;
+  });
+  f.innerHTML = h;
+  f.querySelectorAll(".chip").forEach(el => el.addEventListener("click", onChipClick));
+}
+
+function onChipClick(e){
+  const el = e.currentTarget;
+  if(el.dataset.filter === "type"){
+    const t = el.dataset.type;
+    activeTypes.has(t) ? activeTypes.delete(t) : activeTypes.add(t);
+  } else {
+    const r = el.dataset.repo;
+    activeRepos.has(r) ? activeRepos.delete(r) : activeRepos.add(r);
+  }
+  renderFilters();
+  renderTimeline();
+}
+
+/* --- Segments --- */
+const MIN_PILL = 60;      /* px width for a ×1 segment */
+const PILL_PER_ITEM = 12; /* additional px per item */
+let expandedSegId = null;  /* tracks which segment is expanded */
+let segIdCounter = 0;
+
+function buildSegments(memories){
+  const sorted = memories.slice().sort((a,b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const segs = [];
+  sorted.forEach(m => {
+    if(segs.length && segs[segs.length-1].type === m.type){
+      segs[segs.length-1].items.push(m);
+    } else {
+      segs.push({type: m.type, items: [m], id: "seg-" + (segIdCounter++)});
+    }
+  });
+  return segs;
+}
+
+/* --- Render --- */
+function renderTimeline(){
+  const timeline = document.getElementById("timeline");
+  const visibleRepos = allRepos.filter(r => activeRepos.has(r));
+  const visibleData = DATA.filter(m =>
+    activeTypes.has(m.type) && m.repos.some(r => activeRepos.has(r))
+  );
+
+  if(!visibleRepos.length || !visibleData.length){
+    timeline.innerHTML = '<div class="empty"><h2>No matches</h2><p>Adjust filters to see memories.</p></div>';
+    return;
+  }
+
+  segIdCounter = 0;
+  let lanesHtml = "";
+  visibleRepos.forEach(repo => {
+    const laneMems = visibleData.filter(m => m.repos.includes(repo));
+    const segs = buildSegments(laneMems);
+    let trackHtml = "";
+    segs.forEach(seg => {
+      const count = seg.items.length;
+      const w = MIN_PILL + (count - 1) * PILL_PER_ITEM;
+      const expanded = expandedSegId === seg.id;
+      const cls = "segment" + (expanded ? " expanded" : "");
+      const countBadge = count > 1 ? `<span class="seg-count">×${count}</span>` : "";
+
+      /* date range for tooltip */
+      const first = seg.items[0].created_at.slice(0,10);
+      const last = seg.items[seg.items.length-1].created_at.slice(0,10);
+      const dateRange = first === last ? first : first + " — " + last;
+
+      let itemsHtml = "";
+      seg.items.forEach(m => {
+        const d = m.created_at.slice(0,10);
+        const preview = m.content.length > 50 ? m.content.slice(0,47) + "..." : m.content;
+        itemsHtml += `<div class="seg-item" data-id="${m.id}"><span class="seg-item-date">${esc(d)}</span>${esc(preview)}</div>`;
+      });
+
+      trackHtml += `<div class="${cls}" data-type="${seg.type}" data-seg="${seg.id}" style="min-width:${w}px" title="${esc(dateRange)}">` +
+        `<div class="seg-header" data-seg="${seg.id}">${seg.type}${countBadge}</div>` +
+        `<div class="seg-items">${itemsHtml}</div></div>`;
+    });
+
+    lanesHtml += `<div class="lane"><span class="lane-label">${esc(repo)}</span><div class="lane-track">${trackHtml}</div></div>`;
+  });
+
+  timeline.innerHTML = lanesHtml;
+
+  /* bind events */
+  timeline.querySelectorAll(".seg-header").forEach(el => {
+    el.addEventListener("click", function(){
+      const sid = this.dataset.seg;
+      expandedSegId = expandedSegId === sid ? null : sid;
+      renderTimeline();
+    });
+  });
+  timeline.querySelectorAll(".seg-item").forEach(el => {
+    el.addEventListener("click", function(){
+      const m = byId[this.dataset.id];
+      if(m) openPanel(m);
+    });
+  });
+}
+
+/* --- Tooltip --- */
+const tip = document.getElementById("tooltip");
+function showTooltip(e, text){
+  tip.textContent = text;
+  tip.style.display = "block";
+  tip.style.left = (e.clientX + 12) + "px";
+  tip.style.top = (e.clientY - 30) + "px";
+}
+function hideTooltip(){ tip.style.display = "none"; }
+
+/* --- Detail panel --- */
+const panel = document.getElementById("panel");
+const overlay = document.getElementById("panel-overlay");
+
+function openPanel(m){
+  const dateStr = new Date(m.created_at).toISOString().slice(0,10);
+  const tagsHtml = m.tags.length
+    ? m.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")
+    : '<span style="color:#484f58">none</span>';
+  const supersedes = m.supersedes && byId[m.supersedes]
+    ? `<div class="supersedes-ref">Supersedes: <code>${m.supersedes.slice(0,12)}...</code>
+       <br><small>${esc(byId[m.supersedes].content.slice(0,100))}</small></div>`
+    : m.supersedes
+    ? `<div class="supersedes-ref">Supersedes: <code>${m.supersedes.slice(0,12)}...</code> (deleted)</div>`
+    : "";
+  const supersededBy = DATA.filter(x => x.supersedes === m.id);
+  const supersededByHtml = supersededBy.length
+    ? `<div class="supersedes-ref">Superseded by: ${supersededBy.map(x =>
+        `<code>${x.id.slice(0,12)}...</code>`).join(", ")}</div>`
+    : "";
+
+  panel.innerHTML = `
+    <span class="close" id="panel-close">&times;</span>
+    <span class="badge" data-type="${m.type}">${m.type}</span>
+    <div class="meta">${dateStr}</div>
+    <div class="meta">Repos: ${m.repos.map(r => `<b>${esc(r)}</b>`).join(", ")}</div>
+    <div class="content">${esc(m.content)}</div>
+    <div class="meta">Tags: ${tagsHtml}</div>
+    <div class="meta" style="margin-top:.5rem"><code style="font-size:.7rem;color:#484f58">${m.id}</code></div>
+    ${supersedes}${supersededByHtml}`;
+  panel.style.display = "block";
+  overlay.style.display = "block";
+  document.getElementById("panel-close").addEventListener("click", closePanel);
+  overlay.addEventListener("click", closePanel);
+}
+
+function closePanel(){
+  panel.style.display = "none";
+  overlay.style.display = "none";
+}
+
+function esc(s){
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/* --- Init --- */
+renderFilters();
+renderTimeline();
+
+/* close panel on Escape */
+document.addEventListener("keydown", e => { if(e.key === "Escape") closePanel(); });
+})();
+</script>
+</body>
+</html>

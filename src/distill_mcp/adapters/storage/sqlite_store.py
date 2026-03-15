@@ -200,6 +200,33 @@ class SqliteStore:
         rows = self._conn.execute(query, params).fetchall()
         return [self._row_to_memory(r) for r in rows]
 
+    async def export_all(
+        self,
+        *,
+        repos: list[str] | None = None,
+        after: str | None = None,
+        before: str | None = None,
+    ) -> list[Memory]:
+        assert self._conn is not None
+        query = "SELECT * FROM memories WHERE deleted_at IS NULL"
+        params: list[str] = []
+        if repos:
+            placeholders = ",".join("?" for _ in repos)
+            query += (
+                " AND EXISTS "
+                f"(SELECT 1 FROM json_each(repos) WHERE value IN ({placeholders}))"
+            )
+            params.extend(repos)
+        if after:
+            query += " AND created_at >= ?"
+            params.append(after)
+        if before:
+            query += " AND created_at < ?"
+            params.append(before)
+        query += " ORDER BY created_at ASC"
+        rows = self._conn.execute(query, params).fetchall()
+        return [self._row_to_memory(r) for r in rows]
+
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
     ) -> str | None:
@@ -264,6 +291,7 @@ class SqliteStore:
             tags=json.loads(row["tags"]),
             author=row["author"],
             created_at=datetime.fromisoformat(row["created_at"]),
+            supersedes=row["supersedes"],
             access_count=row["access_count"],
             last_accessed_at=datetime.fromisoformat(last_accessed)
             if last_accessed
