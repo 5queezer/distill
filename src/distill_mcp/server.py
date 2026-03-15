@@ -130,6 +130,7 @@ async def search_memory(
             "repos": r.memory.repos,
             "tags": r.memory.tags,
             "score": round(r.score, 4),
+            "access_count": r.memory.access_count,
         }
         for r in results
     ]

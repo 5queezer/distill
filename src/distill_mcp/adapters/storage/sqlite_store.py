@@ -61,13 +61,28 @@ class SqliteStore:
                 created_at TEXT NOT NULL,
                 updated_at TEXT,
                 supersedes TEXT,
-                deleted_at TEXT
+                deleted_at TEXT,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                last_accessed_at TEXT
             )
         """)
         c.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
             USING fts5(id UNINDEXED, content, tags, tokenize='unicode61')
         """)
+        c.commit()
+        self._migrate(c)
+
+    def _migrate(self, c: sqlite3.Connection) -> None:
+        """Add columns that may be missing from older databases."""
+        existing = {row[1] for row in c.execute("PRAGMA table_info(memories)")}
+        migrations = [
+            ("access_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_accessed_at", "TEXT"),
+        ]
+        for col, typedef in migrations:
+            if col not in existing:
+                c.execute(f"ALTER TABLE memories ADD COLUMN {col} {typedef}")
         c.commit()
 
     # -- StoragePort implementation --
@@ -147,6 +162,15 @@ class SqliteStore:
         assert self._conn is not None
         self._conn.execute(
             "UPDATE memories SET deleted_at = ? WHERE id = ?",
+            (datetime.now(UTC).isoformat(), id),
+        )
+        self._conn.commit()
+
+    async def record_access(self, id: str) -> None:
+        assert self._conn is not None
+        self._conn.execute(
+            "UPDATE memories SET access_count = access_count + 1, "
+            "last_accessed_at = ? WHERE id = ? AND deleted_at IS NULL",
             (datetime.now(UTC).isoformat(), id),
         )
         self._conn.commit()
@@ -231,6 +255,7 @@ class SqliteStore:
     def _row_to_memory(row: sqlite3.Row) -> Memory:
         from distill_mcp.domain.models import Memory
 
+        last_accessed = row["last_accessed_at"]
         return Memory(
             id=row["id"],
             content=row["content"],
@@ -239,4 +264,8 @@ class SqliteStore:
             tags=json.loads(row["tags"]),
             author=row["author"],
             created_at=datetime.fromisoformat(row["created_at"]),
+            access_count=row["access_count"],
+            last_accessed_at=datetime.fromisoformat(last_accessed)
+            if last_accessed
+            else None,
         )

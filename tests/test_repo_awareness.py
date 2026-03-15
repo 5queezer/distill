@@ -101,6 +101,9 @@ class FakeStorage:
     async def list_recent(self, **kw: Any) -> list:
         return []
 
+    async def record_access(self, id: str) -> None:
+        pass
+
 
 class FakeEmbedder:
     async def embed(self, text: str) -> list[float]:
