@@ -24,3 +24,33 @@ class Memory:
 class SearchResult:
     memory: Memory
     score: float  # RRF hybrid score
+
+
+@dataclass
+class MemoryIndex:
+    """Compact search result for progressive disclosure (Layer 1)."""
+
+    id: str
+    type: str
+    snippet: str  # first 80 chars of content
+    repos: list[str]
+    score: float
+    created_at: datetime
+    est_tokens: int  # len(content) // 4
+    agent_id: str | None = None
+
+
+@dataclass
+class MemoryDetail:
+    """Full memory detail for progressive disclosure (Layer 2)."""
+
+    id: str
+    content: str
+    type: str
+    repos: list[str]
+    tags: list[str]
+    score: float | None
+    created_at: datetime
+    author: str | None
+    agent_id: str | None = None
+    est_tokens: int = 0

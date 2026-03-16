@@ -66,6 +66,15 @@ If search_memory finds related context but not the exact answer:
 Never leave a knowledge gap unfilled. Every question you ask
 is an opportunity to capture knowledge that's missing.
 
+### Progressive Disclosure (Token Efficiency)
+search_memory returns a compact index (~30 tokens/result), NOT full content.
+Workflow:
+1. Call search_memory to get index with IDs, types, snippets, scores, est_tokens
+2. Review the index. Decide which results are relevant.
+3. Call get_memories(ids=[...]) with ONLY the relevant IDs to fetch full content.
+NEVER call get_memories for all results — that defeats the purpose.
+Budget: if est_tokens < 50, it's cheap to fetch. If > 200, think twice.
+
 ### After answering from memory
 If you used search_memory to answer a question, and the user
 adds context or corrects you, remember the correction immediately.
@@ -148,27 +157,48 @@ async def search_memory(
     repo: str | None = None,
     agent_id: str | None = None,
 ) -> list[dict]:
-    """Search team knowledge using hybrid keyword + semantic search.
+    """Search team knowledge. Returns compact index (~30 tokens/result).
 
-    Returns the most relevant memories ranked by combined relevance score.
+    Use get_memories to fetch full content for relevant IDs.
     Optionally filter by repo name and/or agent_id.
-
-    When agent_id is None (default), memories from ALL agents are returned.
-    Pass an explicit agent_id to restrict results to a single agent's memories.
     """
     results = await _svc().search(query, top_k, repo=repo, agent_id=agent_id)
     return [
         {
-            "id": r.memory.id,
-            "content": r.memory.content,
-            "type": r.memory.type,
-            "repos": r.memory.repos,
-            "tags": r.memory.tags,
+            "id": r.id,
+            "type": r.type,
+            "snippet": r.snippet,
+            "repos": r.repos,
             "score": round(r.score, 4),
-            "access_count": r.memory.access_count,
-            "agent_id": r.memory.agent_id,
+            "created_at": r.created_at.isoformat(),
+            "est_tokens": r.est_tokens,
+            "agent_id": r.agent_id,
         }
         for r in results
+    ]
+
+
+@mcp.tool
+async def get_memories(ids: list[str]) -> list[dict]:
+    """Fetch full memory details by IDs. Batch multiple IDs in one call.
+
+    Use after search_memory to get content for relevant results only.
+    """
+    details = await _svc().get_batch(ids)
+    return [
+        {
+            "id": d.id,
+            "content": d.content,
+            "type": d.type,
+            "repos": d.repos,
+            "tags": d.tags,
+            "score": d.score,
+            "created_at": d.created_at.isoformat(),
+            "author": d.author,
+            "agent_id": d.agent_id,
+            "est_tokens": d.est_tokens,
+        }
+        for d in details
     ]
 
 
@@ -208,25 +238,24 @@ async def list_recent(
     limit: int = 20,
     agent_id: str | None = None,
 ) -> list[dict]:
-    """List recent memories, optionally filtered by repo, tag, type, or agent_id.
+    """List recent memories as compact index. Use get_memories for full content.
 
-    When agent_id is None (default), memories from ALL agents are returned.
-    Pass an explicit agent_id to restrict results to a single agent's memories.
+    Optionally filter by repo, tag, type, or agent_id.
     """
-    memories = await _svc().list_recent(
+    indexes = await _svc().list_recent(
         repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
     )
     return [
         {
             "id": m.id,
-            "content": m.content,
             "type": m.type,
+            "snippet": m.snippet,
             "repos": m.repos,
-            "tags": m.tags,
             "created_at": m.created_at.isoformat(),
+            "est_tokens": m.est_tokens,
             "agent_id": m.agent_id,
         }
-        for m in memories
+        for m in indexes
     ]
 
 
