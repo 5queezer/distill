@@ -46,6 +46,19 @@ class SqliteStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
         self._lance = lancedb.connect(self._lance_uri)
+        self._migrate_lance()
+
+    def _migrate_lance(self) -> None:
+        """Add columns missing from older LanceDB vectors tables."""
+        assert self._lance is not None
+        if "vectors" not in self._lance.list_tables().tables:
+            return
+        table = self._lance.open_table("vectors")
+        existing = {f.name for f in table.schema}
+        if "agent_id" not in existing:
+            import pyarrow as pa
+
+            table.add_columns(pa.field("agent_id", pa.string()))
 
     def _create_tables(self) -> None:
         assert self._conn is not None
