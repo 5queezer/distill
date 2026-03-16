@@ -626,6 +626,7 @@ There is significant activity around memory MCPs in 2026, but the market splits 
 
 | Product | Raw input stays local | Local LLM distills before sync | Self-hostable | Local distill + team sync |
 |---------|----------------------|-------------------------------|---------------|--------------------------|
+| **Claude-Mem** (18k★) | Partial; raw tool output sent to Claude API for compression. `<private>` tags opt-out, not opt-in. | No; compression via Claude Agent SDK (cloud API), not local LLM | Yes; local SQLite + ChromaDB, but compression depends on cloud API | No; single-user, single-machine (`~/.claude-mem/`), no team sync |
 | **Cipher** (ByteRover) | No (cloud SaaS, IDE plugin uploads snippets) | No; privacy is at infra level, not LLM layer | Limited; primarily managed cloud | No |
 | **Supermemory** ($3M funded) | No (central hosted memory) | No; memory built server-side | No; positioned as hosted service | No |
 | **Grov** | No (shared cloud workspace) | No; focuses on search/chat over team data | Partial self-hosting, not local-first | No |
@@ -662,7 +663,37 @@ Many developers already use Ollama to summarize or redact content before pasting
 
 > **A local-first team memory product that treats the on-device LLM as a mandatory privacy gateway, not an optional extra.**
 
+Claude-Mem (18k stars, 1.2k forks) is the strongest comparable project. It solves the same core problem — session amnesia — with a similar tech stack (SQLite + FTS5, ChromaDB embeddings, hybrid search). However, its privacy model is fundamentally different: Claude-Mem sends raw tool output to the Claude API for compression, and relies on opt-out `<private>` tags rather than mandatory on-device distillation. It is also single-user and single-machine with no team sync. Its progressive disclosure search (index → timeline → details) and automatic capture via hooks are design ideas worth studying.
+
 Cipher is architecturally closest (local storage, dual memory) but lacks distillation and team sync. Supermemory has team sync but no local privacy model. Mem0 is local-capable but single-user and has no distillation pipeline. We are the only product where contributing knowledge is psychologically safe because the raw input is transformed *on your device* before anything reaches the team.
+
+### 16.6 Claude-Mem: Detailed Comparison
+
+Claude-Mem is the most visible project in this space (18k GitHub stars). The overlap is ~70% at the feature level — both solve "persistent memory for coding sessions" with nearly identical tech stacks. The 30% difference is architecturally fundamental.
+
+| Dimension | Claude-Mem | Distill |
+|-----------|-----------|---------|
+| **Privacy model** | Raw tool output → Claude API for compression. `<private>` tags are opt-out. | Raw text → local Ollama. Never leaves device. Privacy is opt-in by default. |
+| **Team sync** | None. `~/.claude-mem/` is local, no shared DB. | Core feature. Shared knowledge pool via SQLite (local) or Cloud SQL (GCP). |
+| **Capture model** | Passive/automatic via hooks (PostToolUse, SessionEnd). Records everything. | Intentional. `remember` is called explicitly. Preview with save/edit/abort. |
+| **Compression** | Claude Agent SDK → ~500 token observations (cloud API call). | Ollama → 1-3 sentence distilled facts (local, no network). |
+| **Platform** | Claude Code plugin, bound to its hook lifecycle. | MCP server — works with Claude Code, Cursor, Cline, any MCP client. |
+| **Multi-agent** | No agent_id, no visibility matrix. Single-agent only. | Planned: agent_id, multi-agent writing, visibility matrix. |
+| **Search** | 3-layer progressive disclosure (index → timeline → full). Token-efficient. | Flat hybrid search (FTS + vector, RRF). Simpler but returns more per call. |
+| **Author attribution** | Not configurable. | `AUTHOR_MODE`: anonymous (default) / pseudonym / named. Developer's choice. |
+| **Web UI** | Real-time memory viewer on localhost:37777. | Not yet (planned). |
+
+**What we should learn from Claude-Mem:**
+
+1. **Progressive disclosure search** — their 3-layer approach (index → timeline → details) saves tokens significantly. Distill should adopt a similar pattern for `search_memory`.
+2. **Automatic capture** — an optional `AUTO_CAPTURE=true` mode that triggers `remember` on corrections and decisions (still routed through local distillation) would lower the barrier to contribution.
+3. **Web viewer** — a local browse/search UI is a quick win for adoption.
+
+**What we should NOT copy:**
+
+- Cloud API for compression — local distillation is our core differentiator.
+- Single-user-only design — team sync is our differentiator.
+- Platform lock to Claude Code — MCP agnosticism is more valuable.
 
 ### 16.5 Reference Architecture
 

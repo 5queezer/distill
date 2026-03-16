@@ -193,13 +193,14 @@ fastmcp install claude-code src/distill_mcp/server.py
 
 Every "memory MCP" stores your raw text in a database. Distill doesn't. The local LLM is a mandatory privacy gateway that transforms personal thoughts into impersonal team knowledge. This is the only product where contributing knowledge is psychologically safe because your exact words never leave your machine.
 
-|  | Raw stays local | LLM distills | Team sync |
-|--|----------------|-------------|-----------|
-| Cipher | ✗ | ✗ | ✓ |
-| Supermemory | ✗ | ✗ | ✓ |
-| Mem0 | ✓ | ✗ | ✗ |
-| Memctl | ✓ | ✗ | ✓ |
-| **Distill** | **✓** | **✓** | **✓** |
+|  | Raw stays local | LLM distills | Team sync | Platform agnostic |
+|--|----------------|-------------|-----------|-------------------|
+| Claude-Mem (18k★) | Partial (cloud API compresses) | ✗ (cloud SDK) | ✗ (single-user) | ✗ (Claude Code only) |
+| Cipher | ✗ | ✗ | ✓ | ✗ |
+| Supermemory | ✗ | ✗ | ✓ | ✗ |
+| Mem0 | ✓ | ✗ | ✗ | ✓ |
+| Memctl | ✓ | ✗ | ✓ | ✓ |
+| **Distill** | **✓** | **✓** | **✓** | **✓** |
 
 ## License
 
