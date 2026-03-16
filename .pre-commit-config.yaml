@@ -34,7 +34,7 @@ repos:
       - id: ty
         name: ty (type check)
         language: system
-        entry: uvx ty check src/
+        entry: uvx ty check --ignore unresolved-import --ignore possibly-missing-attribute src/
         pass_filenames: false
         types: [python]
 

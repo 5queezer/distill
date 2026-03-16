@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from distill_mcp.domain.models import Memory, MemoryDetail, MemoryIndex, SearchResult
+    from distill_mcp.domain.models import Memory, MemoryDetail, MemoryIndex
     from distill_mcp.domain.ports import DistillerPort, EmbeddingPort, StoragePort
 
 # Noise filter: trivial inputs that should never be stored

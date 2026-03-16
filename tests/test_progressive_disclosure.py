@@ -10,8 +10,6 @@ import pytest
 from distill_mcp.domain.models import Memory, MemoryIndex, SearchResult
 from distill_mcp.domain.services import MemoryService, _to_index
 
-
-
 # -- Fakes --
 
 
