@@ -5,10 +5,14 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+import structlog
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 if TYPE_CHECKING:
     from distill_mcp.domain.services import MemoryService
+
+logger = structlog.get_logger()
 
 mcp = FastMCP(
     "distill",
@@ -90,7 +94,8 @@ def set_service(service: MemoryService) -> None:
 
 
 def _svc() -> MemoryService:
-    assert _service is not None, "MemoryService not initialised — call set_service()"
+    if _service is None:
+        raise RuntimeError("MemoryService not initialised — call set_service()")
     return _service
 
 
@@ -110,7 +115,11 @@ def detect_repo() -> str | None:
         return None
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def remember(
     content: str,
     type: str,
@@ -130,13 +139,18 @@ async def remember(
     If agent_id is provided, the memory is tagged with that agent identifier
     for multi-agent filtering.
     """
+    logger.info("tool_invoked", tool="remember", content_length=len(content), type=type)
     if repos is None:
         detected = detect_repo()
         repos = [detected] if detected else []
     return await _svc().remember(content, type, repos, tags, agent_id=agent_id)
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def confirm_memory(id: str, override: str | None = None) -> dict:
     """Confirm a pending memory preview and store it.
 
@@ -147,10 +161,17 @@ async def confirm_memory(id: str, override: str | None = None) -> dict:
         id: The pending_id returned by remember().
         override: Optional replacement text — will be re-distilled and stored.
     """
+    logger.info(
+        "tool_invoked", tool="confirm_memory", id=id, has_override=override is not None
+    )
     return await _svc().confirm_memory(id, override)
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def search_memory(
     query: str,
     top_k: int = 5,
@@ -162,6 +183,10 @@ async def search_memory(
     Use get_memories to fetch full content for relevant IDs.
     Optionally filter by repo name and/or agent_id.
     """
+    top_k = max(1, min(top_k, 100))
+    logger.info(
+        "tool_invoked", tool="search_memory", query_length=len(query), top_k=top_k
+    )
     results = await _svc().search(query, top_k, repo=repo, agent_id=agent_id)
     return [
         {
@@ -178,12 +203,17 @@ async def search_memory(
     ]
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def get_memories(ids: list[str]) -> list[dict]:
     """Fetch full memory details by IDs. Batch multiple IDs in one call.
 
     Use after search_memory to get content for relevant results only.
     """
+    logger.info("tool_invoked", tool="get_memories", id_count=len(ids))
     details = await _svc().get_batch(ids)
     return [
         {
@@ -202,9 +232,14 @@ async def get_memories(ids: list[str]) -> list[dict]:
     ]
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def get_memory(id: str) -> dict:
     """Retrieve a specific memory by its ID."""
+    logger.info("tool_invoked", tool="get_memory", id=id)
     mem = await _svc().get(id)
     if not mem:
         return {"status": "not_found"}
@@ -220,17 +255,28 @@ async def get_memory(id: str) -> dict:
     }
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def update_memory(id: str, content: str) -> dict:
     """Re-distill new content and supersede an existing memory.
 
     The old memory is soft-deleted. A new memory is created with
     the distilled version of the provided content.
     """
+    logger.info(
+        "tool_invoked", tool="update_memory", id=id, content_length=len(content)
+    )
     return await _svc().update(id, content)
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
 async def list_recent(
     repo: str | None = None,
     tag: str | None = None,
@@ -242,6 +288,8 @@ async def list_recent(
 
     Optionally filter by repo, tag, type, or agent_id.
     """
+    limit = max(1, min(limit, 100))
+    logger.info("tool_invoked", tool="list_recent", limit=limit)
     indexes = await _svc().list_recent(
         repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
     )
@@ -259,7 +307,11 @@ async def list_recent(
     ]
 
 
-@mcp.tool
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, openWorldHint=False
+    ),
+)
 async def forget(id: str, agent_id: str | None = None) -> dict:
     """Soft-delete a memory. It will no longer appear in search results.
 
@@ -267,4 +319,5 @@ async def forget(id: str, agent_id: str | None = None) -> dict:
     to that agent. Returns 'forbidden' if the memory belongs to a
     different agent.
     """
+    logger.info("tool_invoked", tool="forget", id=id)
     return await _svc().forget(id, agent_id=agent_id)

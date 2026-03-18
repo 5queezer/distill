@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     distill_preview: bool = (
         True  # When True, remember() returns preview instead of storing
     )
+    log_level: str = "INFO"
 
 
 settings = Settings()
