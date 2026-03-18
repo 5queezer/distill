@@ -39,120 +39,6 @@ src/distill_mcp/
 
 **Dependency rule:** `server.py` depends on `domain/services.py`. Services depend on `domain/ports.py`. Adapters implement ports. Nothing in `domain/` imports from `adapters/`.
 
-## FastMCP patterns (PrefectHQ v2)
-
-We use PrefectHQ's FastMCP (`pip install fastmcp`), not the official SDK's built-in FastMCP.
-
-```python
-from fastmcp import FastMCP
-
-mcp = FastMCP("distill")
-
-@mcp.tool
-def remember(content: str, type: str, repos: list[str], tags: list[str] | None = None) -> dict:
-    """Distill raw input into anonymous team knowledge and store it.
-
-    The raw text is processed locally by Ollama and never leaves your device.
-    Only the distilled factual output is stored in the team database.
-    """
-    # delegate to domain service
-    return service.remember(content, type, repos, tags)
-```
-
-**FastMCP rules:**
-- Tools are plain functions decorated with `@mcp.tool` (no parentheses unless passing args)
-- Docstrings become tool descriptions — write them for the LLM, not for developers
-- Type hints drive the schema. Use `str`, `int`, `list[str]`, `dict`, not complex types
-- Return dicts or simple types, not Pydantic models (FastMCP serializes them)
-- `mcp.run()` in `__main__.py` — handles stdio transport automatically
-- Never print to stdout. FastMCP uses stdout for MCP protocol. Use structlog → stderr.
-- Test tools with `fastmcp dev server.py` or `fastmcp install claude-code server.py`
-
-## Domain models (domain/models.py)
-
-```python
-@dataclass
-class Memory:
-    id: str
-    content: str          # distilled text only
-    type: str             # decision | pattern | failure | dependency | context
-    repos: list[str]
-    tags: list[str]
-    author: str | None    # null=anonymous, hash=pseudonym, name=named
-    created_at: datetime
-
-@dataclass
-class SearchResult:
-    memory: Memory
-    score: float          # RRF hybrid score
-```
-
-## Ports (domain/ports.py)
-
-```python
-class StoragePort(Protocol):
-    async def save(self, memory: Memory) -> str: ...
-    async def get(self, id: str) -> Memory | None: ...
-    async def search(self, query_text: str, query_vec: list[float], top_k: int) -> list[SearchResult]: ...
-    async def delete(self, id: str) -> None: ...
-
-class EmbeddingPort(Protocol):
-    async def embed(self, text: str) -> list[float]: ...
-
-class DistillerPort(Protocol):
-    async def distill(self, raw_text: str) -> str: ...
-```
-
-## 6 MCP tools (server.py)
-
-| Tool | Purpose | R/W |
-|------|---------|-----|
-| `remember` | Distill + store | W |
-| `search_memory` | Hybrid search (FTS + vector, RRF k=60) | R |
-| `get_memory` | By ID | R |
-| `update_memory` | Re-distill + supersede | W |
-| `list_recent` | Filter by repo/tag/type | R |
-| `forget` | Soft-delete | W |
-
-## Two backends
-
-- `BACKEND=local` — SQLite + FTS5 + LanceDB. Ollama for everything. $0.
-- `BACKEND=gcp` — Cloud SQL PostgreSQL + pgvector. Vertex AI for embeddings only. Distillation still local Ollama. ~$11/mo.
-
-Backend is selected in `__main__.py` via config, injected into services as ports.
-
-## Distillation rules (adapters/distiller/ollama_distill.py)
-
-The distillation prompt must:
-- Remove all first-person language (I, we, my)
-- Remove all names of people
-- Remove emotional language, blame, frustration
-- Replace vague time refs ("yesterday") with approximate dates ("2026-03")
-- Keep: technical facts, decisions, reasons, repo names, tech names, version numbers
-- Output: 1-3 sentences of pure factual knowledge
-- Never add information not in the input
-
-## Privacy constraints — non-negotiable
-
-- Raw text NEVER goes to any cloud service. Only to localhost Ollama.
-- `AUTHOR_MODE` env var: `anonymous` (default) | `pseudonym` | `named`. Developer's local choice.
-- `REVIEW_BEFORE_SAVE=true` by default. Developer approves distilled output before storing.
-- Anthropic only sees distilled search results via Claude Code context window.
-
-## Schema constraints
-
-- All embeddings: 768 dimensions. Hardcoded. Do NOT change without migration.
-- `tsvector` uses `'simple'` config by default. Configurable via `FTS_LANGUAGE`.
-- Dedup: cosine similarity > 0.95 → reject insert, return existing memory ID.
-
-## Code style
-
-- Lean. Target ~1,100 lines total.
-- Type hints everywhere. Pydantic for config, dataclasses for domain models.
-- structlog → stderr. Never print to stdout.
-- No god objects. Single responsibility per file.
-- Adapters are thin. Business logic lives in `domain/services.py`.
-
 ## Build & run
 
 ```bash
@@ -196,3 +82,82 @@ Every code change follows this sequence. Do not skip steps.
 - Never skip dedup check on remember
 - Never import from adapters/ inside domain/ (dependency rule violation)
 - Never put business logic in server.py (it's a thin adapter)
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **distill** (315 symbols, 765 relationships, 17 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+
+## When Debugging
+
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/distill/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+
+## When Refactoring
+
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Tools Quick Reference
+
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+
+## Impact Risk Levels
+
+| Depth | Meaning | Action |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/distill/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/distill/clusters` | All functional areas |
+| `gitnexus://repo/distill/processes` | All execution flows |
+| `gitnexus://repo/distill/process/{name}` | Step-by-step execution trace |
+
+## Self-Check Before Finishing
+
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
+
+## CLI
+
+- Re-index: `npx gitnexus analyze`
+- Check freshness: `npx gitnexus status`
+- Generate docs: `npx gitnexus wiki`
+
+<!-- gitnexus:end -->
