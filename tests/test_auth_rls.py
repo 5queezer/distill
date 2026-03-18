@@ -7,10 +7,6 @@ from typing import Any
 
 import pytest
 
-from distill_mcp.adapters.storage.postgres_store import (
-    _rls_init_sql,
-    _set_session_identity_sql,
-)
 from distill_mcp.domain.identity import ANONYMOUS, Identity
 from distill_mcp.domain.models import Memory, SearchResult
 from distill_mcp.domain.services import MemoryService
@@ -139,12 +135,25 @@ async def test_anonymous_confirm_blocked_defense_in_depth():
     assert "identity" in result["reason"].lower()
 
 
+try:
+    from distill_mcp.adapters.storage.postgres_store import (
+        _rls_init_sql,
+        _set_session_identity_sql,
+    )
+
+    _HAS_ASYNCPG = True
+except ImportError:
+    _HAS_ASYNCPG = False
+
+
+@pytest.mark.skipif(not _HAS_ASYNCPG, reason="asyncpg not installed")
 def test_rls_init_sql_creates_policy():
     sql = _rls_init_sql()
     assert "CREATE POLICY" in sql or "DO $$" in sql
     assert "app.repos" in sql
 
 
+@pytest.mark.skipif(not _HAS_ASYNCPG, reason="asyncpg not installed")
 def test_set_session_identity_sql():
     sql = _set_session_identity_sql("dev@example.com", ["distill", "other-repo"])
     assert "app.user_email" in sql
