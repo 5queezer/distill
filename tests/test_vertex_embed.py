@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from distill_mcp.adapters.embeddings.vertex_embed import VertexEmbedder
+google_auth = pytest.importorskip("google.auth", reason="google-auth not installed")
+
+from distill_mcp.adapters.embeddings.vertex_embed import VertexEmbedder  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -78,12 +80,8 @@ async def test_embed_calls_correct_url() -> None:
     mock_client = _mock_async_client(post_return=mock_resp)
 
     with (
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default"
-        ) as mock_default,
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.default") as mock_default,
+        patch("google.auth.transport.requests.Request"),
         patch(
             "distill_mcp.adapters.embeddings.vertex_embed.httpx.AsyncClient"
         ) as mock_client_cls,
@@ -121,7 +119,7 @@ async def test_missing_credentials_raises_runtime_error() -> None:
 
     with (
         patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default",
+            "google.auth.default",
             side_effect=google.auth.exceptions.DefaultCredentialsError("no creds"),
         ),
         pytest.raises(RuntimeError, match="GCP credentials not found"),
@@ -138,12 +136,10 @@ async def test_refresh_failure_raises_runtime_error() -> None:
 
     with (
         patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default",
+            "google.auth.default",
             return_value=(creds, "p"),
         ),
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.transport.requests.Request"),
         pytest.raises(RuntimeError, match="credential refresh failed"),
     ):
         await embedder.embed("test")
@@ -165,12 +161,8 @@ async def test_http_error_raises_runtime_error() -> None:
     )
 
     with (
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default"
-        ) as mock_default,
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.default") as mock_default,
+        patch("google.auth.transport.requests.Request"),
         patch(
             "distill_mcp.adapters.embeddings.vertex_embed.httpx.AsyncClient"
         ) as mock_client_cls,
@@ -186,12 +178,8 @@ async def test_connect_error_raises_runtime_error() -> None:
     mock_client = _mock_async_client(post_side_effect=httpx.ConnectError("refused"))
 
     with (
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default"
-        ) as mock_default,
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.default") as mock_default,
+        patch("google.auth.transport.requests.Request"),
         patch(
             "distill_mcp.adapters.embeddings.vertex_embed.httpx.AsyncClient"
         ) as mock_client_cls,
@@ -207,12 +195,8 @@ async def test_timeout_raises_runtime_error() -> None:
     mock_client = _mock_async_client(post_side_effect=httpx.ReadTimeout("timed out"))
 
     with (
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default"
-        ) as mock_default,
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.default") as mock_default,
+        patch("google.auth.transport.requests.Request"),
         patch(
             "distill_mcp.adapters.embeddings.vertex_embed.httpx.AsyncClient"
         ) as mock_client_cls,
@@ -236,12 +220,8 @@ async def test_malformed_response_raises_runtime_error() -> None:
     mock_client = _mock_async_client(post_return=mock_resp)
 
     with (
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.default"
-        ) as mock_default,
-        patch(
-            "distill_mcp.adapters.embeddings.vertex_embed.google.auth.transport.requests.Request"
-        ),
+        patch("google.auth.default") as mock_default,
+        patch("google.auth.transport.requests.Request"),
         patch(
             "distill_mcp.adapters.embeddings.vertex_embed.httpx.AsyncClient"
         ) as mock_client_cls,

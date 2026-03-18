@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import google.auth
-import google.auth.transport.requests
 import httpx
 
 
@@ -21,6 +19,9 @@ class VertexEmbedder:
         self._model = model
 
     async def embed(self, text: str) -> list[float]:
+        import google.auth
+        import google.auth.transport.requests
+
         try:
             credentials, _ = google.auth.default()
             auth_req = google.auth.transport.requests.Request()
