@@ -93,7 +93,6 @@ class PostgresStore:
         self._rrf_k = rrf_k
         self._fts_language = fts_language
         self._pool: asyncpg.Pool | None = None
-        self._initialized = False
 
     async def _ensure_pool(self) -> asyncpg.Pool:
         """Lazy-init: create pool on first use inside the active event loop."""
