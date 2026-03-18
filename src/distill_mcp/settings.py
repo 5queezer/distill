@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     gcp_project: str | None = None
     gcp_location: str = "us-central1"
     cloud_sql_connection: str | None = None
-    database_url: str | None = None
 
 
 settings = Settings()
