@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from distill_mcp.domain.identity import Identity
+
 if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, MemoryDetail, MemoryIndex
     from distill_mcp.domain.ports import (
@@ -116,6 +118,7 @@ class MemoryService:
         private_dir: Path | None = None,
         scanner: ScannerPort | None = None,
         max_memory_size: int = 8000,
+        identity: Identity | None = None,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
@@ -126,8 +129,16 @@ class MemoryService:
         self._private_dir = private_dir
         self._scanner = scanner
         self._max_memory_size = max_memory_size
+        self._identity = identity
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, _PendingEntry] = {}
+
+    @property
+    def identity_repos(self) -> list[str] | None:
+        """Return repos from identity, or None if auth disabled/anonymous."""
+        if self._identity and not self._identity.is_anonymous:
+            return self._identity.repos
+        return None
 
     @staticmethod
     def _is_noise(text: str) -> str | None:
@@ -160,6 +171,15 @@ class MemoryService:
             entry = self._pending.pop(pid)
             self._cleanup_private_file(entry)
 
+    def _require_write(self) -> dict | None:
+        """Return rejection dict if writes are blocked, None if allowed."""
+        if self._identity is not None and self._identity.is_anonymous:
+            return {
+                "status": "rejected",
+                "reason": "Identity required for writes. Configure git user.email.",
+            }
+        return None
+
     async def remember(
         self,
         raw_text: str,
@@ -172,6 +192,9 @@ class MemoryService:
 
         # Prune expired pending entries
         self._prune_expired()
+
+        if block := self._require_write():
+            return block
 
         # 0a. Size limit
         if len(raw_text) > self._max_memory_size:
@@ -227,7 +250,7 @@ class MemoryService:
                 type=type,
                 repos=repos,
                 tags=tags or [],
-                author=None,
+                author=self._identity.email if self._identity else None,
                 created_at=datetime.now(UTC),
                 agent_id=agent_id,
             )
@@ -275,6 +298,9 @@ class MemoryService:
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
+        if block := self._require_write():
+            return block
+
         # Optimistic claim: pop before any await to prevent concurrent confirms
         # of the same pending_id from both succeeding.
         entry = self._pending.pop(pending_id, None)
@@ -312,7 +338,7 @@ class MemoryService:
                 type=entry.type,
                 repos=entry.repos,
                 tags=entry.tags,
-                author=None,
+                author=self._identity.email if self._identity else None,
                 created_at=datetime.now(UTC),
                 agent_id=entry.agent_id,
             )
@@ -377,6 +403,9 @@ class MemoryService:
     async def update(self, id: str, raw_text: str) -> dict:
         from distill_mcp.domain.models import Memory
 
+        if block := self._require_write():
+            return block
+
         old = await self._storage.get(id)
         if not old:
             return {"status": "not_found"}
@@ -422,6 +451,9 @@ class MemoryService:
         return [_to_index(m) for m in memories]
 
     async def forget(self, id: str, *, agent_id: str | None = None) -> dict:
+        if block := self._require_write():
+            return block
+
         mem = await self._storage.get(id)
         if not mem:
             return {"status": "not_found"}
