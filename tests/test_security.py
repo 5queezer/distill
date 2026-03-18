@@ -136,7 +136,7 @@ async def test_remember_rejects_oversized_content() -> None:
 
 async def test_remember_accepts_content_at_max_size() -> None:
     """Content of exactly max_memory_size length should NOT be rejected for size."""
-    svc, storage, _ = _service()
+    svc, _, _ = _service()
     at_limit = "a" * _MAX_MEMORY_SIZE
     result = await svc.remember(at_limit, "context", ["repo"])
     assert result["status"] in {"saved", "pending"}
@@ -174,7 +174,7 @@ async def test_agent_id_with_special_chars_is_safe() -> None:
 
 async def test_search_large_top_k_does_not_crash() -> None:
     """Verify search handles large top_k values without crashing."""
-    svc, storage, _ = _service()
+    svc, _, _ = _service()
     await svc.remember(_VALID_INPUT, "decision", ["repo"])
     results = await svc.search("PostgreSQL", top_k=999_999)
     assert isinstance(results, list)
