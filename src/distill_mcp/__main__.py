@@ -13,6 +13,8 @@ def _run_server() -> None:
     from distill_mcp.settings import settings
 
     if settings.backend == "gcp":
+        import asyncio
+
         from distill_mcp.adapters.embeddings.vertex_embed import VertexEmbedder
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
 
@@ -20,15 +22,19 @@ def _run_server() -> None:
             raise RuntimeError("GCP_PROJECT is required when BACKEND=gcp")
 
         store = PostgresStore(dsn=settings.database_url)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
         embedder = VertexEmbedder(
             project=settings.gcp_project,
             location=settings.gcp_location,
         )
     elif settings.backend == "postgres":
+        import asyncio
+
         from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
 
         store = PostgresStore(dsn=settings.database_url)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
         embedder = OllamaEmbedder(
             host=settings.ollama_host, model=settings.embedding_model
         )
