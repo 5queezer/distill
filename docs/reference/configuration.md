@@ -40,6 +40,18 @@ All settings are controlled via environment variables (or a `.env` file). Defaul
 | `MAX_MEMORY_SIZE` | `8000` | Maximum memory content size in characters |
 | `FTS_LANGUAGE` | `simple` | Full-text search language configuration |
 
+## Reranking (optional, GCP-only)
+
+Cross-encoder reranking improves search relevance by re-scoring results after hybrid search.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RERANK_ENABLED` | `false` | Enable cross-encoder reranking |
+| `JINA_API_KEY` | — | Jina Reranker API key |
+| `RERANK_MODEL` | `jina-reranker-v2-base-multilingual` | Reranker model |
+
+Reranking adds latency (~200ms) and requires an external API call. Only recommended for GCP backend where search quality is critical. The privacy constraint is preserved — only distilled content (never raw input) is sent to the reranker.
+
 ## GCP settings
 
 Only used when `BACKEND=gcp`.
@@ -61,3 +73,4 @@ Distill uses Clean Architecture ports. Each setting selects an adapter:
 | `EmbeddingPort` | Ollama (`nomic-embed-text`) | Vertex AI (`text-embedding-005`) |
 | `DistillerPort` | Ollama (`gemma3:4b`) | Ollama (`gemma3:4b`) — always local |
 | `ScannerPort` | gitleaks-based secret detection | gitleaks-based secret detection |
+| `RerankerPort` | — (not used) | Jina Reranker API (opt-in) |

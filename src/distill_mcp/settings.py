@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     preview_ttl_seconds: int = 300
     log_level: str = "INFO"
     auth_enabled: bool = False  # Enable git-based identity + RLS
+    rerank_enabled: bool = False
+    jina_api_key: str | None = None
+    rerank_model: str = "jina-reranker-v2-base-multilingual"
 
     # GCP settings (only used when backend=gcp)
     gcp_project: str | None = None
