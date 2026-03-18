@@ -50,3 +50,14 @@ class ScannerPort(Protocol):
     def scan(self, text: str) -> list: ...
     def redact(self, text: str) -> tuple[str, list]: ...
     def has_secrets(self, text: str) -> bool: ...
+
+
+class RerankerPort(Protocol):
+    async def rerank(
+        self, query: str, documents: list[str], top_n: int
+    ) -> list[tuple[int, float]]:
+        """Rerank documents by relevance to query.
+
+        Returns list of (original_index, relevance_score) sorted by score desc.
+        """
+        ...

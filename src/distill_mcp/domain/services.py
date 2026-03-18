@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from distill_mcp.domain.ports import (
         DistillerPort,
         EmbeddingPort,
+        RerankerPort,
         ScannerPort,
         StoragePort,
     )
@@ -116,6 +117,7 @@ class MemoryService:
         private_dir: Path | None = None,
         scanner: ScannerPort | None = None,
         max_memory_size: int = 8000,
+        reranker: RerankerPort | None = None,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
@@ -126,6 +128,7 @@ class MemoryService:
         self._private_dir = private_dir
         self._scanner = scanner
         self._max_memory_size = max_memory_size
+        self._reranker = reranker
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, _PendingEntry] = {}
 
@@ -337,6 +340,17 @@ class MemoryService:
         results = await self._storage.search(
             query, vec, top_k, repo=repo, agent_id=agent_id
         )
+
+        # Rerank step (optional, GCP-only)
+        if self._reranker is not None and results:
+            docs = [r.memory.content for r in results]
+            reranked = await self._reranker.rerank(query, docs, top_k)
+            reranked_results = []
+            for orig_idx, score in reranked:
+                r = results[orig_idx]
+                r.score = score
+                reranked_results.append(r)
+            results = reranked_results
 
         # Recency boost
         now = datetime.now(UTC)
