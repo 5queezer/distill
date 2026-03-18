@@ -6,8 +6,21 @@ build-backend = "hatchling.build"
 name = "distill-mcp"
 version = "0.1.0"
 description = "Privacy-first team memory MCP server — local LLM distillation before team sync"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{ name = "Christian Pojoni", email = "christian.pojoni@gmail.com" }]
+keywords = ["mcp", "memory", "privacy", "llm", "ollama", "claude", "team-knowledge"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "fastmcp>=1.0",
     "pydantic>=2.0",
@@ -22,14 +35,20 @@ dependencies = [
 postgres = ["asyncpg>=0.29", "pgvector>=0.3"]
 gcp = ["google-auth>=2.0", "asyncpg>=0.29", "pgvector>=0.3"]
 
+[project.urls]
+Homepage = "https://github.com/5queezer/distill"
+Documentation = "https://5queezer.github.io/distill/"
+Repository = "https://github.com/5queezer/distill"
+Issues = "https://github.com/5queezer/distill/issues"
+
 [project.scripts]
 distill = "distill_mcp.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/distill_mcp"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/distill_mcp/skills" = "distill_mcp/skills"
+[tool.hatch.build.targets.sdist.force-include]
+"src/distill_mcp/skills" = "src/distill_mcp/skills"
 
 # --- Ruff ---
 [tool.ruff]
