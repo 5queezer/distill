@@ -6,16 +6,10 @@
 
 An MCP server that gives Claude Code a shared team knowledge base — a local LLM transforms your raw input into anonymous, factual knowledge *before* anything leaves your device.
 
-```
-You type:        "I spent 3 days trying Redis pub/sub and it's garbage.
-                  Bob suggested Kafka but I ignored him."
-
-Team DB gets:    "Redis pub/sub is unsuitable for the event-bus use case
-                  due to message loss under load. Evaluate Kafka or NATS.
-                  (Q1 2026)"
-```
-
 No author. No frustration. No names. Just a clean, reusable fact.
+
+![Distill demo — raw thought to clean team fact](docs/demo.gif)
+
 
 ```mermaid
 flowchart LR
@@ -24,8 +18,6 @@ flowchart LR
     C -- approve --> D[Team DB]
     C -- reject --> E[Discarded]
 ```
-
-![Distill demo — raw thought to clean team fact](docs/demo.gif)
 
 ## Quick Start
 
