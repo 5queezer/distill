@@ -51,6 +51,7 @@ nav:
     - Getting Started: tutorials/getting-started.md
   - How-To Guides:
     - Installation: how-to/installation.md
+    - GPU Setup: how-to/gpu-setup.md
     - GCP Backend: how-to/gcp-backend.md
   - Reference:
     - MCP Tools: reference/tools.md

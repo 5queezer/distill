@@ -22,6 +22,8 @@ All settings are controlled via environment variables (or a `.env` file). Defaul
 | `LLM_MODEL` | `gemma3:4b` | Model for distillation |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Model for embeddings (must produce 768-dim vectors) |
 
+Ollama also reads its own environment variables for GPU control (`OLLAMA_NUM_GPU`, `CUDA_VISIBLE_DEVICES`, etc.). See the [GPU Setup guide](../how-to/gpu-setup.md) for hardware-specific configuration.
+
 ## Privacy & review
 
 | Variable | Default | Description |
