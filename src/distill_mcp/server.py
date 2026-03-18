@@ -150,8 +150,12 @@ async def remember(
     """
     logger.info("tool_invoked", tool="remember", content_length=len(content), type=type)
     if repos is None:
-        detected = detect_repo()
-        repos = [detected] if detected else []
+        identity_repos = _svc().identity_repos
+        if identity_repos is not None:
+            repos = identity_repos
+        else:
+            detected = detect_repo()
+            repos = [detected] if detected else []
     return await _svc().remember(content, type, repos, tags, agent_id=agent_id)
 
 
