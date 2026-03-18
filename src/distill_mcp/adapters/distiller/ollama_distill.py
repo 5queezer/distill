@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 
 import httpx
@@ -61,8 +62,9 @@ class OllamaDistiller:
             today=date.today().isoformat(),
             raw_text=raw_text,
         )
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(proxy=proxy) as client:
                 resp = await client.post(
                     f"{self._host}/api/chat",
                     json={

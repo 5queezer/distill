@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import httpx
 
 
@@ -17,8 +19,9 @@ class OllamaEmbedder:
         self._model = model
 
     async def embed(self, text: str) -> list[float]:
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(proxy=proxy) as client:
                 resp = await client.post(
                     f"{self._host}/api/embed",
                     json={"model": self._model, "input": text},
