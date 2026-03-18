@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import asyncpg
 import structlog
 
+from distill_mcp.domain.identity import Identity
+
 if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, SearchResult
 
@@ -46,6 +48,40 @@ _IVFFLAT_IDX = (
 
 _MIN_ROWS_FOR_IVFFLAT = 100
 
+_RLS_SQL = """\
+ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memories FORCE ROW LEVEL SECURITY;
+
+-- Drop existing policies to make this idempotent
+DROP POLICY IF EXISTS memories_repo_isolation ON memories;
+
+-- Policy: users can only see memories whose repos overlap with their session repos.
+-- When app.repos is unset/empty (anonymous), all rows are visible — write-blocking
+-- is enforced at the application layer, not by RLS.
+CREATE POLICY memories_repo_isolation ON memories
+    USING (
+        current_setting('app.repos', true) IS NULL
+        OR current_setting('app.repos', true) = ''
+        OR repos ?| string_to_array(current_setting('app.repos', true), '|')
+    );
+"""
+
+
+def _rls_init_sql() -> str:
+    return _RLS_SQL
+
+
+def _set_session_identity_sql(email: str, repos: list[str]) -> str:
+    """Build SQL to set session-level identity variables.
+
+    Uses session-level SET (not SET LOCAL) because pool connections are
+    reused across transactions. Delimiter is pipe (|) to avoid collision
+    with commas in repo names.
+    """
+    safe_email = email.replace("'", "''")
+    safe_repos = "|".join(r.replace("'", "''") for r in repos)
+    return f"SET app.user_email = '{safe_email}'; SET app.repos = '{safe_repos}';"
+
 
 def rrf_merge(
     fts_ids: list[str], vec_ids: list[str], k: int = 60
@@ -81,6 +117,7 @@ class PostgresStore:
         rrf_k: int = 60,
         fts_language: str = "simple",
         dsn: str | None = None,
+        identity: Identity | None = None,
     ) -> None:
         self._dsn = dsn
         self._host = host
@@ -93,6 +130,7 @@ class PostgresStore:
         self._rrf_k = rrf_k
         self._fts_language = fts_language
         self._pool: asyncpg.Pool | None = None
+        self._identity = identity
 
     async def _ensure_pool(self) -> asyncpg.Pool:
         """Lazy-init: create pool on first use inside the active event loop."""
@@ -116,15 +154,25 @@ class PostgresStore:
             await bootstrap.execute(
                 "ALTER TABLE memories ADD COLUMN IF NOT EXISTS agent_id TEXT"
             )
+            await bootstrap.execute(_RLS_SQL)
         finally:
             await bootstrap.close()
+
+        async def _init_conn(conn: asyncpg.Connection) -> None:
+            await _register_vector(conn)
+            if self._identity and self._identity.email is not None:
+                await conn.execute(
+                    _set_session_identity_sql(
+                        self._identity.email, self._identity.repos
+                    )
+                )
 
         if self._dsn:
             self._pool = await asyncpg.create_pool(
                 dsn=self._dsn,
                 min_size=self._min_pool,
                 max_size=self._max_pool,
-                init=_register_vector,
+                init=_init_conn,
             )
         else:
             self._pool = await asyncpg.create_pool(
@@ -135,7 +183,7 @@ class PostgresStore:
                 password=self._password,
                 min_size=self._min_pool,
                 max_size=self._max_pool,
-                init=_register_vector,
+                init=_init_conn,
             )
         log.info("postgres_store.initialized")
         return self._pool

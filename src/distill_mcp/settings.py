@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     preview_enabled: bool = True
     preview_ttl_seconds: int = 300
     log_level: str = "INFO"
+    auth_enabled: bool = False  # Enable git-based identity + RLS
 
     # GCP settings (only used when backend=gcp)
     gcp_project: str | None = None

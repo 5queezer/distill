@@ -12,6 +12,13 @@ def _run_server() -> None:
     from distill_mcp.server import mcp, set_service
     from distill_mcp.settings import settings
 
+    # Resolve identity when auth is enabled
+    identity = None
+    if settings.auth_enabled:
+        from distill_mcp.adapters.identity.git_identity import resolve_git_identity
+
+        identity = resolve_git_identity()
+
     if settings.backend == "gcp":
         import asyncio
 
@@ -21,7 +28,7 @@ def _run_server() -> None:
         if not settings.gcp_project:
             raise RuntimeError("GCP_PROJECT is required when BACKEND=gcp")
 
-        store = PostgresStore(dsn=settings.database_url)
+        store = PostgresStore(dsn=settings.database_url, identity=identity)
         asyncio.get_event_loop().run_until_complete(store.initialize())
         embedder = VertexEmbedder(
             project=settings.gcp_project,
@@ -33,7 +40,7 @@ def _run_server() -> None:
         from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
 
-        store = PostgresStore(dsn=settings.database_url)
+        store = PostgresStore(dsn=settings.database_url, identity=identity)
         asyncio.get_event_loop().run_until_complete(store.initialize())
         embedder = OllamaEmbedder(
             host=settings.ollama_host, model=settings.embedding_model
@@ -65,6 +72,7 @@ def _run_server() -> None:
         private_dir=private_dir,
         scanner=scanner,
         max_memory_size=settings.max_memory_size,
+        identity=identity,
     )
     set_service(service)
     mcp.run(transport="stdio")
