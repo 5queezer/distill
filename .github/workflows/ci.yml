@@ -14,3 +14,5 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest tests/ -x -v -k "not ollama" --no-cov || test $? -eq 5
+      - name: Audit dependencies
+        run: uv run pip-audit

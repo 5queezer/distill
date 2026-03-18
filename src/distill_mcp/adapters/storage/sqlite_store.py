@@ -46,9 +46,24 @@ class SqliteStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
         self._lance = lancedb.connect(self._lance_uri)
+        self._migrate_lance()
+
+    def _migrate_lance(self) -> None:
+        """Add columns missing from older LanceDB vectors tables."""
+        if self._lance is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
+        if "vectors" not in self._lance.list_tables().tables:
+            return
+        table = self._lance.open_table("vectors")
+        existing = {f.name for f in table.schema}
+        if "agent_id" not in existing:
+            import pyarrow as pa
+
+            table.add_columns(pa.field("agent_id", pa.string()))
 
     def _create_tables(self) -> None:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         c = self._conn
         c.execute("""
             CREATE TABLE IF NOT EXISTS memories (
@@ -97,7 +112,8 @@ class SqliteStore:
         *,
         supersedes: str | None = None,
     ) -> str:
-        assert self._conn is not None and self._lance is not None
+        if self._conn is None or self._lance is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         c = self._conn
         c.execute(
             """INSERT INTO memories (id, content, type, repos, tags, author,
@@ -131,7 +147,8 @@ class SqliteStore:
         return memory.id
 
     async def get(self, id: str) -> Memory | None:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         row = self._conn.execute(
             "SELECT * FROM memories WHERE id = ? AND deleted_at IS NULL", (id,)
         ).fetchone()
@@ -169,7 +186,8 @@ class SqliteStore:
         return out
 
     async def delete(self, id: str) -> None:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         self._conn.execute(
             "UPDATE memories SET deleted_at = ? WHERE id = ?",
             (datetime.now(UTC).isoformat(), id),
@@ -177,7 +195,8 @@ class SqliteStore:
         self._conn.commit()
 
     async def record_access(self, id: str) -> None:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         self._conn.execute(
             "UPDATE memories SET access_count = access_count + 1, "
             "last_accessed_at = ? WHERE id = ? AND deleted_at IS NULL",
@@ -194,7 +213,8 @@ class SqliteStore:
         limit: int = 20,
         agent_id: str | None = None,
     ) -> list[Memory]:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         query = "SELECT * FROM memories WHERE deleted_at IS NULL"
         params: list[str | int] = []
         if repo:
@@ -217,7 +237,8 @@ class SqliteStore:
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
     ) -> str | None:
-        assert self._lance is not None and self._conn is not None
+        if self._lance is None or self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         if not self._has_vec_table():
             return None
         table = self._lance.open_table("vectors")
@@ -235,13 +256,15 @@ class SqliteStore:
         return None
 
     def _has_vec_table(self) -> bool:
-        assert self._lance is not None
+        if self._lance is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         return "vectors" in self._lance.list_tables().tables
 
     # -- Internal helpers --
 
     def _fts_search(self, query_text: str, limit: int) -> list[str]:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         sanitized = self._sanitize_fts(query_text)
         if not sanitized:
             return []
@@ -253,7 +276,8 @@ class SqliteStore:
         return [r["id"] for r in rows]
 
     def _vec_search(self, query_vec: list[float], limit: int) -> list[str]:
-        assert self._lance is not None
+        if self._lance is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         if not self._has_vec_table():
             return []
         table = self._lance.open_table("vectors")

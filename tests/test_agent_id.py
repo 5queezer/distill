@@ -147,7 +147,7 @@ async def test_search_filters_by_agent_id() -> None:
     )
 
     results = await svc.search("postgres", agent_id="agent-a")
-    assert all(r.memory.agent_id == "agent-a" for r in results)
+    assert all(r.agent_id == "agent-a" for r in results)
 
 
 async def test_search_without_filter_returns_all() -> None:
@@ -158,7 +158,7 @@ async def test_search_without_filter_returns_all() -> None:
     )
 
     results = await svc.search("chosen")
-    agent_ids = {r.memory.agent_id for r in results}
+    agent_ids = {r.agent_id for r in results}
     assert "agent-a" in agent_ids
     assert "agent-b" in agent_ids
 
@@ -171,7 +171,7 @@ async def test_list_recent_filters_by_agent_id() -> None:
     )
 
     results = await svc.list_recent(agent_id="agent-b")
-    assert all(m.agent_id == "agent-b" for m in results)
+    assert all(m.agent_id == "agent-b" for m in results)  # MemoryIndex has agent_id
     assert len(results) == 1
 
 

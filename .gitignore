@@ -19,3 +19,4 @@ dist/
 ~/.team-memory/
 lancedb/
 *.db
+.gitnexus

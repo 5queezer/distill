@@ -33,6 +33,7 @@ def _run_server() -> None:
         preview_ttl_seconds=settings.preview_ttl_seconds,
         private_dir=private_dir,
         scanner=scanner,
+        max_memory_size=settings.max_memory_size,
     )
     set_service(service)
     mcp.run(transport="stdio")

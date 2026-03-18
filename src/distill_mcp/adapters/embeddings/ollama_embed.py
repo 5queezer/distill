@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import httpx
 
 
@@ -17,11 +19,27 @@ class OllamaEmbedder:
         self._model = model
 
     async def embed(self, text: str) -> list[float]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._host}/api/embed",
-                json={"model": self._model, "input": text},
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            return resp.json()["embeddings"][0]
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+        try:
+            async with httpx.AsyncClient(proxy=proxy) as client:
+                resp = await client.post(
+                    f"{self._host}/api/embed",
+                    json={"model": self._model, "input": text},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                return resp.json()["embeddings"][0]
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(
+                f"Ollama embedding failed: HTTP {e.response.status_code}"
+            ) from e
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"Ollama is not reachable — is it running on {self._host}?"
+            ) from None
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            raise RuntimeError(f"Ollama embedding request failed: {e}") from e
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(
+                f"Unexpected Ollama embedding response format: {e}"
+            ) from e

@@ -114,7 +114,6 @@ class TestAccessBoost:
         unused = SearchResult(memory=_memory(access_count=0), score=0.5)
         svc, _ = _service([popular, unused])
         results = await svc.search("query")
-        assert results[0].memory.access_count == 10
         assert results[0].score > results[1].score
 
     async def test_access_boost_formula(self) -> None:
@@ -148,7 +147,6 @@ class TestAccessBoost:
         popular = SearchResult(memory=_memory(access_count=50), score=0.4)
         svc, _ = _service([relevant, popular])
         results = await svc.search("query")
-        assert results[0].memory.access_count == 0
         assert results[0].score > results[1].score
 
 

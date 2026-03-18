@@ -1,0 +1,52 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run ruff check --fix $CLAUDE_FILE_PATHS && uv run ruff format $CLAUDE_FILE_PATHS"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__distill__search_memory",
+      "mcp__distill__list_recent",
+      "Bash(grep -E \"\\\\.\\(md|txt|yml|yaml\\)$|^d\")",
+      "Bash(find /home/christian/Projects/distill/src/distill_mcp -type f -name \"__init__.py\" -exec wc -l {} +)",
+      "mcp__distill__remember",
+      "Bash(git -C /home/christian/Projects/distill status)",
+      "Bash(git -C /home/christian/Projects/distill diff)",
+      "Bash(git -C /home/christian/Projects/distill log --oneline -5)",
+      "Bash(git -C /home/christian/Projects/distill add src/distill_mcp/adapters/storage/sqlite_store.py src/distill_mcp/domain/ports.py src/distill_mcp/domain/services.py src/distill_mcp/server.py tests/test_remember_flow.py tests/test_repo_awareness.py)",
+      "Bash(git -C /home/christian/Projects/distill log main..HEAD --oneline)",
+      "Bash(git -C /home/christian/Projects/distill diff main...HEAD --stat)",
+      "Bash(git -C /home/christian/Projects/distill branch -vv)",
+      "mcp__distill__get_memory",
+      "mcp__distill__forget",
+      "Bash(python3:*)",
+      "Bash(git config:*)",
+      "Read(//home/christian/Projects/distill/**)",
+      "Read(//home/christian/**)",
+      "Bash(mkdir -p /home/christian/Projects/distill/.claude/skills/seed-from-git)",
+      "Bash(mv /home/christian/Projects/distill/.claude/skills/seed-from-git.md /home/christian/Projects/distill/.claude/skills/seed-from-git/SKILL.md)",
+      "Bash(git rm:*)",
+      "Bash(ln -s /home/christian/Projects/distill/.claude/skills/seed-from-git /home/christian/.claude/skills/seed-from-git)",
+      "Bash(mv /home/christian/Projects/distill/.claude/skills/seed-from-git/SKILL.md /home/christian/Projects/distill/src/distill_mcp/skills/seed-from-git/SKILL.md)",
+      "Bash(rm -d /home/christian/Projects/distill/.claude/skills/seed-from-git)",
+      "Bash(ln -s ../../../src/distill_mcp/skills/seed-from-git /home/christian/Projects/distill/.claude/skills/seed-from-git)",
+      "Bash(rm /home/christian/Projects/distill/.claude/skills/seed-from-git)",
+      "Bash(ln -s ../../src/distill_mcp/skills/seed-from-git /home/christian/Projects/distill/.claude/skills/seed-from-git)",
+      "Bash(ln -s /home/christian/Projects/distill/src/distill_mcp/skills/seed-from-git /home/christian/.claude/skills/seed-from-git)",
+      "Bash(gh repo:*)"
+    ],
+    "additionalDirectories": [
+      "/home/christian/Projects/distill/.claude",
+      "/home/christian/Projects/distill/src/distill_mcp/skills"
+    ]
+  }
+}

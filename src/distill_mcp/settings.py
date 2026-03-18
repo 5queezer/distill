@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     distill_enabled: bool = True
     preview_enabled: bool = True
     preview_ttl_seconds: int = 300
+    log_level: str = "INFO"
 
 
 settings = Settings()

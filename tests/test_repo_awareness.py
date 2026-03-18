@@ -130,7 +130,7 @@ async def test_search_with_repo_filters() -> None:
     svc = MemoryService(FakeStorage(mems), FakeEmbedder(), FakeDistiller())
     results = await svc.search("fact", top_k=10, repo="auth-service")
     assert len(results) == 1
-    assert results[0].memory.id == "a"
+    assert results[0].id == "a"
 
 
 @pytest.mark.asyncio

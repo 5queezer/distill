@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from distill_mcp.domain.models import Memory, SearchResult
+    from distill_mcp.domain.models import Memory, MemoryDetail, MemoryIndex
     from distill_mcp.domain.ports import (
         DistillerPort,
         EmbeddingPort,
@@ -66,6 +66,41 @@ class _PendingEntry:
     agent_id: str | None = None
 
 
+def _to_index(memory: Memory, score: float = 0.0) -> MemoryIndex:
+    """Convert a Memory to a compact MemoryIndex for progressive disclosure."""
+    from distill_mcp.domain.models import MemoryIndex
+
+    snippet = memory.content[:80] + ("..." if len(memory.content) > 80 else "")
+    return MemoryIndex(
+        id=memory.id,
+        type=memory.type,
+        snippet=snippet,
+        repos=memory.repos,
+        score=score,
+        created_at=memory.created_at,
+        est_tokens=len(memory.content) // 4,
+        agent_id=memory.agent_id,
+    )
+
+
+def _to_detail(memory: Memory, score: float | None = None) -> MemoryDetail:
+    """Convert a Memory to a full MemoryDetail."""
+    from distill_mcp.domain.models import MemoryDetail
+
+    return MemoryDetail(
+        id=memory.id,
+        content=memory.content,
+        type=memory.type,
+        repos=memory.repos,
+        tags=memory.tags,
+        score=score,
+        created_at=memory.created_at,
+        author=memory.author,
+        agent_id=memory.agent_id,
+        est_tokens=len(memory.content) // 4,
+    )
+
+
 class MemoryService:
     """Core use cases: remember, search, get, update, list_recent, forget, confirm_memory."""
 
@@ -80,6 +115,7 @@ class MemoryService:
         preview_ttl_seconds: int = 300,
         private_dir: Path | None = None,
         scanner: ScannerPort | None = None,
+        max_memory_size: int = 8000,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
@@ -89,6 +125,7 @@ class MemoryService:
         self._preview_ttl_seconds = preview_ttl_seconds
         self._private_dir = private_dir
         self._scanner = scanner
+        self._max_memory_size = max_memory_size
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, _PendingEntry] = {}
 
@@ -136,7 +173,14 @@ class MemoryService:
         # Prune expired pending entries
         self._prune_expired()
 
-        # 0. Noise filter — reject before wasting Ollama cycles
+        # 0a. Size limit
+        if len(raw_text) > self._max_memory_size:
+            return {
+                "status": "rejected",
+                "reason": f"Content exceeds maximum size ({self._max_memory_size} chars)",
+            }
+
+        # 0b. Noise filter — reject before wasting Ollama cycles
         noise_reason = self._is_noise(raw_text)
         if noise_reason:
             return {"status": "rejected", "reason": noise_reason}
@@ -288,7 +332,7 @@ class MemoryService:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
-    ) -> list[SearchResult]:
+    ) -> list[MemoryIndex]:
         vec = await self._embedder.embed(query)
         results = await self._storage.search(
             query, vec, top_k, repo=repo, agent_id=agent_id
@@ -314,10 +358,21 @@ class MemoryService:
             self._bg_tasks.add(task)
             task.add_done_callback(self._bg_tasks.discard)
 
-        return results
+        return [_to_index(r.memory, r.score) for r in results]
 
     async def get(self, id: str) -> Memory | None:
         return await self._storage.get(id)
+
+    async def get_batch(self, ids: list[str]) -> list[MemoryDetail]:
+        """Fetch full details for multiple memory IDs (Layer 2)."""
+        details: list[MemoryDetail] = []
+        for mid in ids:
+            if not mid:
+                continue
+            mem = await self._storage.get(mid)
+            if mem is not None:
+                details.append(_to_detail(mem))
+        return details
 
     async def update(self, id: str, raw_text: str) -> dict:
         from distill_mcp.domain.models import Memory
@@ -360,10 +415,11 @@ class MemoryService:
         type: str | None = None,
         limit: int = 20,
         agent_id: str | None = None,
-    ) -> list[Memory]:
-        return await self._storage.list_recent(
+    ) -> list[MemoryIndex]:
+        memories = await self._storage.list_recent(
             repo=repo, tag=tag, type=type, limit=limit, agent_id=agent_id
         )
+        return [_to_index(m) for m in memories]
 
     async def forget(self, id: str, *, agent_id: str | None = None) -> dict:
         mem = await self._storage.get(id)
