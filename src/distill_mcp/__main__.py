@@ -49,6 +49,15 @@ def _run_server() -> None:
 
     scanner = SecretScanner()
 
+    reranker = None
+    if settings.rerank_enabled and settings.jina_api_key:
+        from distill_mcp.adapters.reranker.jina_rerank import JinaReranker
+
+        reranker = JinaReranker(
+            api_key=settings.jina_api_key,
+            model=settings.rerank_model,
+        )
+
     service = MemoryService(
         storage=store,
         embedder=embedder,
@@ -59,6 +68,7 @@ def _run_server() -> None:
         private_dir=private_dir,
         scanner=scanner,
         max_memory_size=settings.max_memory_size,
+        reranker=reranker,
     )
     set_service(service)
     mcp.run(transport="stdio")

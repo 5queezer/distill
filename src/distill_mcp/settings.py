@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     preview_enabled: bool = True
     preview_ttl_seconds: int = 300
     log_level: str = "INFO"
+    rerank_enabled: bool = False
+    jina_api_key: str | None = None
+    rerank_model: str = "jina-reranker-v2-base-multilingual"
 
     # GCP settings (only used when backend=gcp)
     gcp_project: str | None = None
