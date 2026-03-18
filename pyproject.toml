@@ -47,9 +47,6 @@ distill = "distill_mcp.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/distill_mcp"]
 
-[tool.hatch.build.targets.sdist.force-include]
-"src/distill_mcp/skills" = "src/distill_mcp/skills"
-
 # --- Ruff ---
 [tool.ruff]
 src = ["src"]
