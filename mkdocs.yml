@@ -1,6 +1,8 @@
-site_name: distill
+site_name: Distill
 site_description: Privacy-first Team Memory MCP Server
-site_url: https://your-domain.com
+site_url: https://5queezer.github.io/distill
+repo_url: https://github.com/5queezer/distill
+repo_name: 5queezer/distill
 
 theme:
   name: material
@@ -32,7 +34,8 @@ plugins:
 markdown_extensions:
   - pymdownx.highlight
   - pymdownx.superfences
-  - pymdownx.tabbed
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.details
   - admonition
   - toc:
@@ -41,14 +44,13 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Tutorials:
-    - Overview: tutorials/index.md
     - Getting Started: tutorials/getting-started.md
   - How-To Guides:
-    - Overview: how-to/index.md
-    - Deploy to Production: how-to/deploy-to-production.md
+    - Installation: how-to/installation.md
+    - GCP Backend: how-to/gcp-backend.md
   - Reference:
-    - Overview: reference/index.md
-    - API Documentation: reference/api-documentation.md
+    - MCP Tools: reference/tools.md
+    - Configuration: reference/configuration.md
   - Explanation:
-    - Overview: explanation/index.md
-    - Architecture Overview: explanation/architecture-overview.md
+    - Architecture: explanation/architecture.md
+    - Privacy Model: explanation/privacy-model.md
