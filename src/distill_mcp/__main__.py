@@ -23,6 +23,7 @@ def _run_server() -> None:
         distiller=distiller,
         distill_enabled=settings.distill_enabled,
         distill_preview=settings.distill_preview,
+        max_memory_size=settings.max_memory_size,
     )
     set_service(service)
     mcp.run(transport="stdio")

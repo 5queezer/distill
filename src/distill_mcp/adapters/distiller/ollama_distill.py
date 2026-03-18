@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 
 import httpx
@@ -38,7 +39,9 @@ DISTILL_USER = """\
 Today's date: {today}
 
 Raw input:
+<raw_input>
 {raw_text}
+</raw_input>
 
 Distilled output:"""
 
@@ -59,19 +62,33 @@ class OllamaDistiller:
             today=date.today().isoformat(),
             raw_text=raw_text,
         )
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._host}/api/chat",
-                json={
-                    "model": self._model,
-                    "messages": [
-                        {"role": "system", "content": DISTILL_SYSTEM},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                },
-                timeout=60.0,
-            )
-            resp.raise_for_status()
-            result = resp.json()["message"]["content"].strip()
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+        try:
+            async with httpx.AsyncClient(proxy=proxy) as client:
+                resp = await client.post(
+                    f"{self._host}/api/chat",
+                    json={
+                        "model": self._model,
+                        "messages": [
+                            {"role": "system", "content": DISTILL_SYSTEM},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "stream": False,
+                    },
+                    timeout=60.0,
+                )
+                resp.raise_for_status()
+                result = resp.json()["message"]["content"].strip()
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(
+                f"Ollama distillation failed: HTTP {e.response.status_code}"
+            ) from e
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"Ollama is not reachable — is it running on {self._host}?"
+            ) from None
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            raise RuntimeError(f"Ollama distillation request failed: {e}") from e
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(f"Unexpected Ollama response format: {e}") from e
         return result

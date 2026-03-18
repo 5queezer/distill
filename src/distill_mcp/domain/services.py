@@ -90,12 +90,14 @@ class MemoryService:
         *,
         distill_enabled: bool = True,
         distill_preview: bool = True,
+        max_memory_size: int = 8000,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
         self._distiller = distiller
         self._distill_enabled = distill_enabled
         self._distill_preview = distill_preview
+        self._max_memory_size = max_memory_size
         self._bg_tasks: set[asyncio.Task[None]] = set()
         # pending_id -> {memory, vec, expires_at}
         self._pending: dict[str, dict] = {}
@@ -135,7 +137,14 @@ class MemoryService:
         # Opportunistic cleanup
         self.cleanup_expired_pending()
 
-        # 0. Noise filter
+        # 0a. Size limit
+        if len(raw_text) > self._max_memory_size:
+            return {
+                "status": "rejected",
+                "reason": f"Content exceeds maximum size ({self._max_memory_size} chars)",
+            }
+
+        # 0b. Noise filter
         noise_reason = self._is_noise(raw_text)
         if noise_reason:
             return {"status": "rejected", "reason": noise_reason}
