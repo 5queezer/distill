@@ -1,4 +1,4 @@
-"""MCP server — thin adapter exposing tools. No business logic here."""
+"""MCP server — thin adapter exposing 7 tools. No business logic here."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ logger = structlog.get_logger()
 mcp = FastMCP(
     "distill",
     instructions="""\
+## CRITICAL RULE
+NEVER call confirm_memory automatically after remember.
+ALWAYS show the preview to the user and wait for explicit confirmation.
+Calling confirm_memory without user approval defeats the purpose of the preview.
+
 ## Memory Protocol
 
 ### Storing — after every correction or decision
@@ -129,8 +134,12 @@ async def remember(
 ) -> dict:
     """Distill raw input into anonymous team knowledge.
 
-    When preview mode is enabled (default), returns a pending preview.
-    Show the preview to the user and call confirm_memory() after approval.
+    When preview mode is enabled (default), this returns a distilled preview
+    with a pending_id. The memory is NOT stored yet. Show the preview to the
+    user and call confirm_memory with the pending_id after they approve.
+
+    When preview mode is disabled (PREVIEW_ENABLED=false), this stores
+    immediately and returns the saved memory id.
 
     The raw text is processed locally by Ollama and never leaves your device.
     Only the distilled factual output is stored in the team database.
@@ -154,7 +163,7 @@ async def remember(
 async def confirm_memory(id: str, override: str | None = None) -> dict:
     """Confirm a pending memory preview and store it.
 
-    Call after remember() returns status='pending'.
+    Call after remember() returns status='preview'.
     Optionally provide override text to store a corrected version instead.
 
     Args:

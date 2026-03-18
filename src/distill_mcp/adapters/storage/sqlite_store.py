@@ -242,7 +242,7 @@ class SqliteStore:
         if not self._has_vec_table():
             return None
         table = self._lance.open_table("vectors")
-        results = table.search(vec).metric("cosine").limit(5).to_list()
+        results = table.search(vec).metric("cosine").limit(5).to_list()  # type: ignore[unresolved-attribute]
         for r in results:
             distance = r["_distance"]
             if distance >= (1.0 - threshold):
@@ -281,7 +281,7 @@ class SqliteStore:
         if not self._has_vec_table():
             return []
         table = self._lance.open_table("vectors")
-        results = table.search(query_vec).metric("cosine").limit(limit).to_list()
+        results = table.search(query_vec).metric("cosine").limit(limit).to_list()  # type: ignore[unresolved-attribute]
         return [r["id"] for r in results]
 
     @staticmethod

@@ -93,7 +93,7 @@ _VALID_INPUT = "We chose asyncpg for async PostgreSQL support"
 
 
 def _service(
-    distill_preview: bool = False,
+    preview_enabled: bool = False,
     *,
     fail_save: bool = False,
 ) -> tuple[MemoryService, FakeStorage, FakeDistiller]:
@@ -104,7 +104,7 @@ def _service(
         embedder=FakeEmbedder(),
         distiller=distiller,
         distill_enabled=True,
-        distill_preview=distill_preview,
+        preview_enabled=preview_enabled,
     )
     return svc, storage, distiller
 
@@ -246,9 +246,9 @@ async def test_forget_nonexistent_returns_not_found() -> None:
 
 async def test_confirm_memory_restores_pending_on_save_failure() -> None:
     """If storage.save() raises, the pending entry must be preserved."""
-    svc, _storage, _ = _service(distill_preview=True, fail_save=True)
+    svc, _storage, _ = _service(preview_enabled=True, fail_save=True)
     pending = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert pending["status"] == "pending"
+    assert pending["status"] == "preview"
     pid = pending["pending_id"]
 
     with pytest.raises(RuntimeError, match="storage write failed"):

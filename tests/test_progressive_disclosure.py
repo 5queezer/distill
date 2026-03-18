@@ -90,7 +90,7 @@ def _service(
         storage=FakeStorage(search_results, memories, recent),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
-        distill_preview=False,
+        preview_enabled=False,
     )
 
 

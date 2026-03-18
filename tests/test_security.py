@@ -96,7 +96,7 @@ _MAX_MEMORY_SIZE = 8000
 
 def _service(
     *,
-    distill_preview: bool = False,
+    preview_enabled: bool = False,
     distiller: FakeDistiller | FailingDistiller | None = None,
     embedder: FakeEmbedder | FailingEmbedder | None = None,
     storage: FakeStorage | None = None,
@@ -113,7 +113,7 @@ def _service(
         embedder=embedder,
         distiller=distiller,
         distill_enabled=True,
-        distill_preview=distill_preview,
+        preview_enabled=preview_enabled,
         max_memory_size=max_memory_size,
     )
     return svc, storage, distiller
@@ -218,6 +218,6 @@ async def test_distiller_failure_propagates_cleanly() -> None:
 
 async def test_embedder_failure_propagates_cleanly() -> None:
     """When Ollama embedder fails, RuntimeError should propagate."""
-    svc, _, _ = _service(distill_preview=False, embedder=FailingEmbedder())
+    svc, _, _ = _service(preview_enabled=False, embedder=FailingEmbedder())
     with pytest.raises(RuntimeError, match="Ollama embedding failed"):
         await svc.remember(_VALID_INPUT, "decision", ["repo"])

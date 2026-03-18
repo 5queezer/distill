@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
-import time
-from datetime import UTC, datetime
+import os
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
     from distill_mcp.domain.models import Memory, MemoryDetail, MemoryIndex
-    from distill_mcp.domain.ports import DistillerPort, EmbeddingPort, StoragePort
+    from distill_mcp.domain.ports import (
+        DistillerPort,
+        EmbeddingPort,
+        ScannerPort,
+        StoragePort,
+    )
 
 # Noise filter: trivial inputs that should never be stored
 NOISE_PATTERNS = frozenset(
@@ -42,6 +50,20 @@ ACCESS_BOOST_WEIGHT = 0.1
 
 # Preview TTL in seconds
 PENDING_TTL = 300
+
+
+@dataclass
+class _PendingEntry:
+    id: str
+    raw_text: str
+    distilled: str
+    type: str
+    repos: list[str]
+    tags: list[str]
+    vec: list[float]
+    expires_at: datetime
+    private_file: Path | None
+    agent_id: str | None = None
 
 
 def _to_index(memory: Memory, score: float = 0.0) -> MemoryIndex:
@@ -80,7 +102,7 @@ def _to_detail(memory: Memory, score: float | None = None) -> MemoryDetail:
 
 
 class MemoryService:
-    """Core use cases: remember, search, get, update, list_recent, forget."""
+    """Core use cases: remember, search, get, update, list_recent, forget, confirm_memory."""
 
     def __init__(
         self,
@@ -89,30 +111,23 @@ class MemoryService:
         distiller: DistillerPort,
         *,
         distill_enabled: bool = True,
-        distill_preview: bool = True,
+        preview_enabled: bool = True,
+        preview_ttl_seconds: int = 300,
+        private_dir: Path | None = None,
+        scanner: ScannerPort | None = None,
         max_memory_size: int = 8000,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
         self._distiller = distiller
         self._distill_enabled = distill_enabled
-        self._distill_preview = distill_preview
+        self._preview_enabled = preview_enabled
+        self._preview_ttl_seconds = preview_ttl_seconds
+        self._private_dir = private_dir
+        self._scanner = scanner
         self._max_memory_size = max_memory_size
         self._bg_tasks: set[asyncio.Task[None]] = set()
-        # pending_id -> {memory, vec, expires_at}
-        self._pending: dict[str, dict] = {}
-
-    # ------------------------------------------------------------------
-    # Pending store helpers
-    # ------------------------------------------------------------------
-
-    def cleanup_expired_pending(self) -> int:
-        """Remove expired pending entries. Returns count removed."""
-        now = time.time()
-        expired = [pid for pid, e in self._pending.items() if e["expires_at"] <= now]
-        for pid in expired:
-            del self._pending[pid]
-        return len(expired)
+        self._pending: dict[str, _PendingEntry] = {}
 
     @staticmethod
     def _is_noise(text: str) -> str | None:
@@ -124,6 +139,27 @@ class MemoryService:
             return f"Input too short ({len(stripped)} chars). Minimum {MIN_CONTENT_LENGTH}."
         return None
 
+    @staticmethod
+    def _cleanup_private_file(entry: _PendingEntry) -> None:
+        """Delete the raw-text private file for an entry, ignoring errors."""
+        if entry.private_file is not None:
+            try:
+                entry.private_file.unlink(missing_ok=True)
+            except OSError as exc:
+                logging.debug(
+                    "Could not delete private file %s: %s", entry.private_file, exc
+                )
+
+    def _prune_expired(self) -> None:
+        """Remove expired entries from pending dict and delete their private files."""
+        now = datetime.now(UTC)
+        expired_ids = [
+            pid for pid, entry in self._pending.items() if entry.expires_at < now
+        ]
+        for pid in expired_ids:
+            entry = self._pending.pop(pid)
+            self._cleanup_private_file(entry)
+
     async def remember(
         self,
         raw_text: str,
@@ -134,8 +170,8 @@ class MemoryService:
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
-        # Opportunistic cleanup
-        self.cleanup_expired_pending()
+        # Prune expired pending entries
+        self._prune_expired()
 
         # 0a. Size limit
         if len(raw_text) > self._max_memory_size:
@@ -144,10 +180,15 @@ class MemoryService:
                 "reason": f"Content exceeds maximum size ({self._max_memory_size} chars)",
             }
 
-        # 0b. Noise filter
+        # 0b. Noise filter — reject before wasting Ollama cycles
         noise_reason = self._is_noise(raw_text)
         if noise_reason:
             return {"status": "rejected", "reason": noise_reason}
+
+        # Layer 1: Pre-distillation secret scan — redact before Ollama sees it
+        pre_findings: list = []
+        if self._scanner is not None:
+            raw_text, pre_findings = self._scanner.redact(raw_text)
 
         # 1. Distill — inject agent_id prefix when present
         distill_input = raw_text
@@ -162,94 +203,127 @@ class MemoryService:
         if "no_factual_content" in distilled.lower().replace(" ", "_"):
             return {"status": "rejected", "reason": "no factual content"}
 
+        # Layer 3: Post-distillation secret scan — hard block if LLM leaked secrets
+        if self._scanner is not None and self._scanner.has_secrets(distilled):
+            return {
+                "status": "blocked",
+                "reason": "Distilled output contained potential secrets. Nothing was saved.",
+            }
+
         # 2. Embed
         vec = await self._embedder.embed(distilled)
 
-        # 3. Dedup
-        existing_id = await self._storage.check_duplicate(vec)
-        if existing_id:
-            return {"status": "duplicate", "existing_id": existing_id}
+        # If preview is disabled, store immediately (old behavior)
+        if not self._preview_enabled:
+            # 3. Dedup
+            existing_id = await self._storage.check_duplicate(vec)
+            if existing_id:
+                return {"status": "duplicate", "existing_id": existing_id}
 
-        # 4. Build memory object
-        memory = Memory(
-            id=uuid4().hex,
-            content=distilled,
+            # 4. Save
+            memory = Memory(
+                id=uuid4().hex,
+                content=distilled,
+                type=type,
+                repos=repos,
+                tags=tags or [],
+                author=None,
+                created_at=datetime.now(UTC),
+                agent_id=agent_id,
+            )
+            saved_id = await self._storage.save(memory, vec)
+            return {
+                "status": "saved",
+                "id": saved_id,
+                "distilled": distilled,
+                "redacted_count": len(pre_findings),
+            }
+
+        # Preview enabled: save to pending, write raw text to private file
+        pending_id = uuid4().hex
+        private_file: Path | None = None
+        if self._private_dir is not None:
+            self._private_dir.mkdir(parents=True, exist_ok=True)
+            private_file = self._private_dir / f"{pending_id}.txt"
+            fd = os.open(private_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(raw_text)
+
+        expires_at = datetime.now(UTC) + timedelta(seconds=self._preview_ttl_seconds)
+        self._pending[pending_id] = _PendingEntry(
+            id=pending_id,
+            raw_text=raw_text,
+            distilled=distilled,
             type=type,
             repos=repos,
             tags=tags or [],
-            author=None,
-            created_at=datetime.now(UTC),
+            vec=vec,
+            expires_at=expires_at,
+            private_file=private_file,
             agent_id=agent_id,
         )
-
-        # 5. Preview gate
-        if self._distill_preview:
-            pending_id = uuid4().hex
-            self._pending[pending_id] = {
-                "memory": memory,
-                "vec": vec,
-                "expires_at": time.time() + PENDING_TTL,
-            }
-            return {
-                "status": "pending",
-                "pending_id": pending_id,
-                "distilled": distilled,
-                "message": (
-                    f"Call confirm_memory(id='{pending_id}') to store, "
-                    "or pass override='...' to edit first. Expires in 5 min."
-                ),
-            }
-
-        # 6. Direct save (preview disabled)
-        saved_id = await self._storage.save(memory, vec)
-        return {"status": "saved", "id": saved_id, "distilled": distilled}
+        return {
+            "status": "preview",
+            "pending_id": pending_id,
+            "distilled": distilled,
+            "expires_in_seconds": self._preview_ttl_seconds,
+            "redacted_count": len(pre_findings),
+        }
 
     async def confirm_memory(
         self, pending_id: str, override: str | None = None
     ) -> dict:
-        """Commit a pending preview to storage."""
         from distill_mcp.domain.models import Memory
 
-        entry = self._pending.get(pending_id)
+        # Optimistic claim: pop before any await to prevent concurrent confirms
+        # of the same pending_id from both succeeding.
+        entry = self._pending.pop(pending_id, None)
         if entry is None:
-            self.cleanup_expired_pending()
-            return {"status": "not_found", "pending_id": pending_id}
+            return {"status": "not_found", "reason": "pending_id not found or expired"}
 
-        if entry["expires_at"] <= time.time():
-            del self._pending[pending_id]
-            self.cleanup_expired_pending()
-            return {"status": "expired", "pending_id": pending_id}
+        # Prune other expired entries now that ours is safely claimed
+        self._prune_expired()
 
-        self.cleanup_expired_pending()
+        # Check expiry (entry is already removed from pending)
+        if entry.expires_at < datetime.now(UTC):
+            self._cleanup_private_file(entry)
+            return {"status": "expired"}
 
-        memory: Memory = entry["memory"]
-        vec: list[float] = entry["vec"]
-
-        if override is not None:
-            if self._distill_enabled:
-                distilled = await self._distiller.distill(override)
+        # Determine final text and vector.
+        # override is stored as-is (user-edited text bypasses distillation by design).
+        try:
+            if override is not None:
+                final_text = override
+                vec = await self._embedder.embed(final_text)
             else:
-                distilled = override
-            vec = await self._embedder.embed(distilled)
+                final_text = entry.distilled
+                vec = entry.vec
+
+            # Dedup check
+            existing_id = await self._storage.check_duplicate(vec)
+            if existing_id:
+                self._cleanup_private_file(entry)
+                return {"status": "duplicate", "existing_id": existing_id}
+
+            # Save
             memory = Memory(
                 id=uuid4().hex,
-                content=distilled,
-                type=memory.type,
-                repos=memory.repos,
-                tags=memory.tags,
-                author=memory.author,
+                content=final_text,
+                type=entry.type,
+                repos=entry.repos,
+                tags=entry.tags,
+                author=None,
                 created_at=datetime.now(UTC),
-                agent_id=memory.agent_id,
+                agent_id=entry.agent_id,
             )
-
-        try:
             saved_id = await self._storage.save(memory, vec)
         except Exception:
-            self._pending[pending_id] = entry  # restore on failure
+            # Re-insert so the caller can retry; entry TTL is still valid
+            self._pending[pending_id] = entry
             raise
-        del self._pending[pending_id]
 
-        return {"status": "saved", "id": saved_id, "distilled": memory.content}
+        self._cleanup_private_file(entry)
+        return {"status": "saved", "id": saved_id, "distilled": final_text}
 
     async def search(
         self,
