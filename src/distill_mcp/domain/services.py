@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from distill_mcp.domain.ports import (
         DistillerPort,
         EmbeddingPort,
+        RerankerPort,
         ScannerPort,
         StoragePort,
     )
@@ -47,8 +48,18 @@ MIN_CONTENT_LENGTH = 20
 # Search quality thresholds
 MIN_SEARCH_SCORE = 0.35
 RECENCY_WEIGHT = 0.15
-RECENCY_HALFLIFE_DAYS = 30
 ACCESS_BOOST_WEIGHT = 0.1
+
+# Weibull decay parameters per memory type: (scale λ in days, shape k)
+# S(t) = exp(-(t/λ)^k)  — 1.0 at t=0, decays toward 0
+WEIBULL_PARAMS: dict[str, tuple[float, float]] = {
+    "decision": (14.0, 1.5),  # fast decay — decisions get superseded
+    "context": (7.0, 2.0),  # fast decay — context is ephemeral
+    "failure": (45.0, 1.2),  # medium decay — failures become less relevant
+    "pattern": (90.0, 0.8),  # slow decay — patterns are durable
+    "dependency": (180.0, 0.7),  # very slow — dependency choices are long-lived
+}
+WEIBULL_DEFAULT = (30.0, 1.0)  # fallback: exponential decay, ~30 day halflife
 
 # Preview TTL in seconds
 PENDING_TTL = 300
@@ -119,6 +130,7 @@ class MemoryService:
         scanner: ScannerPort | None = None,
         max_memory_size: int = 8000,
         identity: Identity | None = None,
+        reranker: RerankerPort | None = None,
     ) -> None:
         self._storage = storage
         self._embedder = embedder
@@ -130,6 +142,7 @@ class MemoryService:
         self._scanner = scanner
         self._max_memory_size = max_memory_size
         self._identity = identity
+        self._reranker = reranker
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._pending: dict[str, _PendingEntry] = {}
 
@@ -351,6 +364,17 @@ class MemoryService:
         self._cleanup_private_file(entry)
         return {"status": "saved", "id": saved_id, "distilled": final_text}
 
+    @staticmethod
+    def _weibull_recency(age_days: int, memory_type: str) -> float:
+        """Weibull survival function: S(t) = exp(-(t/λ)^k).
+
+        Returns 1.0 for fresh memories, decays toward 0 at type-specific rates.
+        """
+        scale, shape = WEIBULL_PARAMS.get(memory_type, WEIBULL_DEFAULT)
+        if age_days <= 0:
+            return 1.0
+        return math.exp(-((age_days / scale) ** shape))
+
     async def search(
         self,
         query: str,
@@ -364,11 +388,22 @@ class MemoryService:
             query, vec, top_k, repo=repo, agent_id=agent_id
         )
 
-        # Recency boost
+        # Rerank step (optional, typically GCP-only)
+        if self._reranker is not None and results:
+            docs = [r.memory.content for r in results]
+            reranked = await self._reranker.rerank(query, docs, top_k)
+            reranked_results = []
+            for orig_idx, score in reranked:
+                r = results[orig_idx]
+                r.score = score
+                reranked_results.append(r)
+            results = reranked_results
+
+        # Weibull recency boost — type-aware decay
         now = datetime.now(UTC)
         for r in results:
             age_days = (now - r.memory.created_at).days
-            recency = 1.0 / (1.0 + age_days / RECENCY_HALFLIFE_DAYS)
+            recency = self._weibull_recency(age_days, r.memory.type)
             r.score = (1.0 - RECENCY_WEIGHT) * r.score + RECENCY_WEIGHT * recency
 
         # Access-frequency boost

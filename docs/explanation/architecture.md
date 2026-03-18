@@ -22,7 +22,7 @@ graph TB
     subgraph "Domain Layer (inner ring)"
         SVC["services.py — use cases"]
         MDL["models.py — Memory, SearchResult"]
-        PRT["ports.py — StoragePort, EmbeddingPort, DistillerPort, ScannerPort"]
+        PRT["ports.py — StoragePort, EmbeddingPort, DistillerPort, ScannerPort, RerankerPort"]
     end
 
     subgraph "Adapters (outer ring)"
@@ -30,6 +30,7 @@ graph TB
         EMB["ollama_embed.py / vertex_embed.py"]
         DST["ollama_distill.py"]
         SCN["secret_scanner.py"]
+        RRK["jina_rerank.py (opt-in)"]
     end
 
     subgraph "Infrastructure"
@@ -45,6 +46,7 @@ graph TB
     EMB -.->|implements| PRT
     DST -.->|implements| PRT
     SCN -.->|implements| PRT
+    RRK -.->|implements| PRT
     DST --> OLLAMA
     EMB --> OLLAMA
     SQL --> DB
@@ -69,8 +71,10 @@ src/distill_mcp/
 │   │   └── vertex_embed.py    # EmbeddingPort → Vertex AI
 │   ├── distiller/
 │   │   └── ollama_distill.py  # DistillerPort → local Ollama (always local)
-│   └── scanner/
-│       └── secret_scanner.py  # ScannerPort → gitleaks-based redaction
+│   ├── scanner/
+│   │   └── secret_scanner.py  # ScannerPort → gitleaks-based redaction
+│   └── reranker/
+│       └── jina_rerank.py     # RerankerPort → Jina Reranker API (opt-in)
 │
 ├── server.py            # FastMCP tool definitions — thin adapter
 ├── settings.py          # pydantic-settings, env var loading
@@ -108,5 +112,22 @@ Distillation is **always local** regardless of backend — this is the privacy g
 1. Query is embedded via `EmbeddingPort` (768-dim vector)
 2. Full-text search runs in parallel with vector similarity search
 3. Results are merged using Reciprocal Rank Fusion (k=60)
-4. Returns compact index (~30 tokens/result) for progressive disclosure
-5. Client fetches full content with `get_memories` for relevant results only
+4. Optional cross-encoder reranking via `RerankerPort` (Jina API, GCP-only)
+5. Weibull time-decay boost — type-aware recency scoring (decisions decay fast, patterns persist)
+6. Access-frequency boost — frequently accessed memories rank higher
+7. Returns compact index (~30 tokens/result) for progressive disclosure
+8. Client fetches full content with `get_memories` for relevant results only
+
+### Weibull time-decay
+
+Instead of a simple inverse decay, memories decay at rates appropriate to their type:
+
+| Type | Scale (λ) | Shape (k) | Behavior |
+|------|-----------|-----------|----------|
+| `context` | 7 days | 2.0 | Fastest decay — ephemeral |
+| `decision` | 14 days | 1.5 | Fast — decisions get superseded |
+| `failure` | 45 days | 1.2 | Medium — failures become less relevant |
+| `pattern` | 90 days | 0.8 | Slow — patterns are durable |
+| `dependency` | 180 days | 0.7 | Slowest — dependency choices are long-lived |
+
+The Weibull survival function `S(t) = exp(-(t/λ)^k)` starts at 1.0 and decays toward 0. The shape parameter `k` controls the decay curve: `k < 1` gives a long tail (useful for durable knowledge), `k > 1` gives accelerating decay (useful for ephemeral context).
