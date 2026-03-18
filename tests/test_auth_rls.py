@@ -150,3 +150,22 @@ def test_set_session_identity_sql():
     assert "app.user_email" in sql
     assert "dev@example.com" in sql
     assert "distill" in sql
+
+
+async def test_authenticated_user_author_propagates_to_confirm():
+    """Preview → confirm flow should carry author from identity."""
+    ident = Identity(email="dev@example.com", repos=["distill"])
+    storage = FakeStorage()
+    svc = MemoryService(
+        storage=storage,
+        embedder=FakeEmbedder(),
+        distiller=FakeDistiller(),
+        preview_enabled=True,
+        identity=ident,
+    )
+    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
+    assert result["status"] == "preview"
+
+    confirmed = await svc.confirm_memory(result["pending_id"])
+    assert confirmed["status"] == "saved"
+    assert storage.saved[0].author == "dev@example.com"
