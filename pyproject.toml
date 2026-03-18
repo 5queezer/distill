@@ -7,6 +7,7 @@ name = "distill-mcp"
 version = "0.1.0"
 description = "Privacy-first team memory MCP server — local LLM distillation before team sync"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "fastmcp>=1.0",
     "pydantic>=2.0",
