@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     backend: str = "local"
+    database_url: str | None = (
+        None  # e.g. postgresql://user:pass@localhost:5432/distill
+    )
     data_dir: str = "~/.team-memory"
     ollama_host: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"

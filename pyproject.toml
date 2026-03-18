@@ -18,6 +18,9 @@ dependencies = [
     "detect-secrets>=1.5.0",
 ]
 
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.29", "pgvector>=0.3"]
+
 [project.scripts]
 distill = "distill_mcp.__main__:main"
 
