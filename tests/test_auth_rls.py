@@ -7,6 +7,10 @@ from typing import Any
 
 import pytest
 
+from distill_mcp.adapters.storage.postgres_store import (
+    _rls_init_sql,
+    _set_session_identity_sql,
+)
 from distill_mcp.domain.identity import ANONYMOUS, Identity
 from distill_mcp.domain.models import Memory, SearchResult
 from distill_mcp.domain.services import MemoryService
@@ -133,3 +137,16 @@ async def test_anonymous_confirm_blocked_defense_in_depth():
     result = await svc.confirm_memory("fake-pending-id")
     assert result["status"] == "rejected"
     assert "identity" in result["reason"].lower()
+
+
+def test_rls_init_sql_creates_policy():
+    sql = _rls_init_sql()
+    assert "CREATE POLICY" in sql or "DO $$" in sql
+    assert "app.repos" in sql
+
+
+def test_set_session_identity_sql():
+    sql = _set_session_identity_sql("dev@example.com", ["distill", "other-repo"])
+    assert "app.user_email" in sql
+    assert "dev@example.com" in sql
+    assert "distill" in sql
