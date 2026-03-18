@@ -87,6 +87,15 @@ def _run_server() -> None:
 
 
 def main() -> None:
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "check-hardware":
+        from distill_mcp.hardware import detect_hardware, format_report
+
+        info = detect_hardware()
+        print(format_report(info))
+        return
+
     _run_server()
 
 
