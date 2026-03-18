@@ -96,6 +96,26 @@ class PostgresStore:
 
     async def initialize(self) -> None:
         """Create pool, register pgvector codec, run migrations."""
+        # Run schema first (creates pgvector extension) before pool init
+        # tries to register the vector codec on new connections.
+        if self._dsn:
+            bootstrap = await asyncpg.connect(dsn=self._dsn)
+        else:
+            bootstrap = await asyncpg.connect(
+                host=self._host,
+                port=self._port,
+                database=self._database,
+                user=self._user,
+                password=self._password,
+            )
+        try:
+            await bootstrap.execute(_SCHEMA_SQL)
+            await bootstrap.execute(
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS agent_id TEXT"
+            )
+        finally:
+            await bootstrap.close()
+
         if self._dsn:
             self._pool = await asyncpg.create_pool(
                 dsn=self._dsn,
@@ -113,11 +133,6 @@ class PostgresStore:
                 min_size=self._min_pool,
                 max_size=self._max_pool,
                 init=_register_vector,
-            )
-        async with self._pool.acquire() as conn:
-            await conn.execute(_SCHEMA_SQL)
-            await conn.execute(
-                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS agent_id TEXT"
             )
         log.info("postgres_store.initialized")
 
