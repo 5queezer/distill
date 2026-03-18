@@ -14,8 +14,16 @@ def _run_server() -> None:
     from distill_mcp.server import mcp, set_service
     from distill_mcp.settings import settings
 
-    store = SqliteStore(settings.data_dir, rrf_k=settings.rrf_k)
-    store.initialize()
+    if settings.backend == "postgres":
+        import asyncio
+
+        from distill_mcp.adapters.storage.postgres_store import PostgresStore
+
+        store = PostgresStore(dsn=settings.database_url)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
+    else:
+        store = SqliteStore(settings.data_dir, rrf_k=settings.rrf_k)
+        store.initialize()
 
     embedder = OllamaEmbedder(host=settings.ollama_host, model=settings.embedding_model)
     distiller = OllamaDistiller(host=settings.ollama_host, model=settings.llm_model)

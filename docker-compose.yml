@@ -1,0 +1,43 @@
+services:
+  distill:
+    build: .
+    environment:
+      BACKEND: postgres
+      DATABASE_URL: postgresql://distill:distill@postgres:5432/distill
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    stdin_open: true
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: distill
+      POSTGRES_PASSWORD: distill
+      POSTGRES_DB: distill
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distill"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pgdata:
+  ollama_data:
