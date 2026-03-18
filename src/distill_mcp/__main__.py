@@ -7,25 +7,48 @@ def _run_server() -> None:
     from pathlib import Path
 
     from distill_mcp.adapters.distiller.ollama_distill import OllamaDistiller
-    from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
     from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
-    from distill_mcp.adapters.storage.sqlite_store import SqliteStore
     from distill_mcp.domain.services import MemoryService
     from distill_mcp.server import mcp, set_service
     from distill_mcp.settings import settings
 
-    if settings.backend == "postgres":
+    if settings.backend == "gcp":
         import asyncio
 
+        from distill_mcp.adapters.embeddings.vertex_embed import VertexEmbedder
+        from distill_mcp.adapters.storage.postgres_store import PostgresStore
+
+        if not settings.gcp_project:
+            raise RuntimeError("GCP_PROJECT is required when BACKEND=gcp")
+
+        store = PostgresStore(dsn=settings.database_url)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
+        embedder = VertexEmbedder(
+            project=settings.gcp_project,
+            location=settings.gcp_location,
+        )
+    elif settings.backend == "postgres":
+        import asyncio
+
+        from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
 
         store = PostgresStore(dsn=settings.database_url)
         asyncio.get_event_loop().run_until_complete(store.initialize())
+        embedder = OllamaEmbedder(
+            host=settings.ollama_host, model=settings.embedding_model
+        )
     else:
+        from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
+        from distill_mcp.adapters.storage.sqlite_store import SqliteStore
+
         store = SqliteStore(settings.data_dir, rrf_k=settings.rrf_k)
         store.initialize()
+        embedder = OllamaEmbedder(
+            host=settings.ollama_host, model=settings.embedding_model
+        )
 
-    embedder = OllamaEmbedder(host=settings.ollama_host, model=settings.embedding_model)
+    # Distiller stays local Ollama regardless of backend (privacy constraint)
     distiller = OllamaDistiller(host=settings.ollama_host, model=settings.llm_model)
 
     private_dir = Path(settings.data_dir).expanduser() / "private"

@@ -94,10 +94,13 @@ class PostgresStore:
         self._fts_language = fts_language
         self._pool: asyncpg.Pool | None = None
 
-    async def initialize(self) -> None:
-        """Create pool, register pgvector codec, run migrations."""
-        # Run schema first (creates pgvector extension) before pool init
-        # tries to register the vector codec on new connections.
+    async def _ensure_pool(self) -> asyncpg.Pool:
+        """Lazy-init: create pool on first use inside the active event loop."""
+        if self._pool is not None:
+            return self._pool
+
+        # Bootstrap: run schema in a bare connection first so the pgvector
+        # extension exists before pool init tries to register the codec.
         if self._dsn:
             bootstrap = await asyncpg.connect(dsn=self._dsn)
         else:
@@ -135,6 +138,11 @@ class PostgresStore:
                 init=_register_vector,
             )
         log.info("postgres_store.initialized")
+        return self._pool
+
+    async def initialize(self) -> None:
+        """Eagerly initialize pool — only needed for non-async callers."""
+        await self._ensure_pool()
 
     async def close(self) -> None:
         if self._pool:
@@ -150,11 +158,8 @@ class PostgresStore:
         *,
         supersedes: str | None = None,
     ) -> str:
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO memories
                    (id, content, type, repos, tags, author,
@@ -176,11 +181,8 @@ class PostgresStore:
         return memory.id
 
     async def get(self, id: str) -> Memory | None:
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM memories WHERE id = $1 AND deleted_at IS NULL", id
             )
@@ -199,13 +201,10 @@ class PostgresStore:
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
+        pool = await self._ensure_pool()
         fetch_limit = top_k * 2
 
-        async with self._pool.acquire() as conn:
+        async with pool.acquire() as conn:
             fts_ids = await self._fts_search(conn, query_text, fetch_limit)
             vec_ids = await self._vec_search(conn, query_vec, fetch_limit)
 
@@ -226,11 +225,8 @@ class PostgresStore:
         return out
 
     async def delete(self, id: str) -> None:
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE memories SET deleted_at = $1 WHERE id = $2",
                 datetime.now(UTC),
@@ -238,11 +234,8 @@ class PostgresStore:
             )
 
     async def record_access(self, id: str) -> None:
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE memories SET access_count = access_count + 1, "
                 "last_accessed_at = $1 WHERE id = $2 AND deleted_at IS NULL",
@@ -294,11 +287,8 @@ class PostgresStore:
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
     ) -> str | None:
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, 1 - (embedding <=> $1::vector) AS similarity "
                 "FROM memories WHERE deleted_at IS NULL AND embedding IS NOT NULL "
@@ -342,11 +332,8 @@ class PostgresStore:
 
     async def _maybe_create_ivfflat(self) -> None:
         """Create ivfflat index once we have enough rows for it to be useful."""
-        if self._pool is None:
-            raise RuntimeError(
-                "PostgresStore not initialized — call initialize() first"
-            )
-        async with self._pool.acquire() as conn:
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT count(*) FROM memories WHERE embedding IS NOT NULL"
             )

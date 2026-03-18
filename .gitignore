@@ -20,3 +20,4 @@ dist/
 lancedb/
 *.db
 .gitnexus
+.documcp/

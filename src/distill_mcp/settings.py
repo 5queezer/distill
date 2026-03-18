@@ -23,5 +23,10 @@ class Settings(BaseSettings):
     preview_ttl_seconds: int = 300
     log_level: str = "INFO"
 
+    # GCP settings (only used when backend=gcp)
+    gcp_project: str | None = None
+    gcp_location: str = "us-central1"
+    cloud_sql_connection: str | None = None
+
 
 settings = Settings()
