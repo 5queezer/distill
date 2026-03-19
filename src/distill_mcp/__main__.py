@@ -86,15 +86,27 @@ def _run_server() -> None:
     mcp.run(transport="stdio")
 
 
+def _print_seed_workflow() -> None:
+    from pathlib import Path
+
+    skill_path = Path(__file__).parent / "skills" / "seed" / "SKILL.md"
+    print(skill_path.read_text())
+
+
 def main() -> None:
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] == "check-hardware":
-        from distill_mcp.hardware import detect_hardware, format_report
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        if cmd == "check-hardware":
+            from distill_mcp.hardware import detect_hardware, format_report
 
-        info = detect_hardware()
-        print(format_report(info))
-        return
+            info = detect_hardware()
+            print(format_report(info))
+            return
+        if cmd == "seed":
+            _print_seed_workflow()
+            return
 
     _run_server()
 
