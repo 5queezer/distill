@@ -46,6 +46,7 @@ distill = "distill_mcp.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/distill_mcp"]
+artifacts = ["*.md"]
 
 # --- Ruff ---
 [tool.ruff]
