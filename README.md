@@ -8,15 +8,9 @@ An MCP server that gives Claude Code a shared team knowledge base — a local LL
 
 No author. No frustration. No names. Just a clean, reusable fact.
 
-![Distill demo — raw thought to clean team fact](docs/demo.gif)
+![Distill demo — raw thought to clean team fact](https://raw.githubusercontent.com/5queezer/distill/main/docs/demo.gif)
 
-```mermaid
-flowchart LR
-    A[You type freely] --> B[Ollama on your Mac]
-    B --> C{Review}
-    C -- approve --> D[Team DB]
-    C -- reject --> E[Discarded]
-```
+![Raw input → local Ollama → review → team DB or discard](https://raw.githubusercontent.com/5queezer/distill/main/docs/flow.svg)
 
 ## Quick Start
 
