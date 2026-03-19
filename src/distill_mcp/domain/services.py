@@ -426,14 +426,12 @@ class MemoryService:
 
     async def get_batch(self, ids: list[str]) -> list[MemoryDetail]:
         """Fetch full details for multiple memory IDs (Layer 2)."""
-        details: list[MemoryDetail] = []
-        for mid in ids:
-            if not mid:
-                continue
-            mem = await self._storage.get(mid)
-            if mem is not None:
-                details.append(_to_detail(mem))
-        return details
+        valid_ids = [mid for mid in ids if mid]
+        if not valid_ids:
+            return []
+        results = await asyncio.gather(*(self._storage.get(mid) for mid in valid_ids))
+        # Preserve request order, skip missing
+        return [_to_detail(mem) for mem in results if mem is not None]
 
     async def update(self, id: str, raw_text: str) -> dict:
         from distill_mcp.domain.models import Memory

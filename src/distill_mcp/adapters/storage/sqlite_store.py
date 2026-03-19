@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import sqlite3
@@ -41,7 +42,7 @@ class SqliteStore:
     def initialize(self) -> None:
         """Create tables. Must be called before any other method."""
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path))
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
@@ -105,12 +106,11 @@ class SqliteStore:
 
     # -- StoragePort implementation --
 
-    async def save(
+    def _sync_save(
         self,
         memory: Memory,
         vec: list[float],
-        *,
-        supersedes: str | None = None,
+        supersedes: str | None,
     ) -> str:
         if self._conn is None or self._lance is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
@@ -146,7 +146,16 @@ class SqliteStore:
 
         return memory.id
 
-    async def get(self, id: str) -> Memory | None:
+    async def save(
+        self,
+        memory: Memory,
+        vec: list[float],
+        *,
+        supersedes: str | None = None,
+    ) -> str:
+        return await asyncio.to_thread(self._sync_save, memory, vec, supersedes)
+
+    def _sync_get(self, id: str) -> Memory | None:
         if self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         row = self._conn.execute(
@@ -156,14 +165,16 @@ class SqliteStore:
             return None
         return self._row_to_memory(row)
 
-    async def search(
+    async def get(self, id: str) -> Memory | None:
+        return await asyncio.to_thread(self._sync_get, id)
+
+    def _sync_search(
         self,
         query_text: str,
         query_vec: list[float],
         top_k: int,
-        *,
-        repo: str | None = None,
-        agent_id: str | None = None,
+        repo: str | None,
+        agent_id: str | None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -175,7 +186,7 @@ class SqliteStore:
         for mid, score in merged:
             if len(out) >= top_k:
                 break
-            mem = await self.get(mid)
+            mem = self._sync_get(mid)
             if mem is None:
                 continue
             if repo is not None and repo not in mem.repos:
@@ -185,7 +196,20 @@ class SqliteStore:
             out.append(SearchResult(memory=mem, score=score))
         return out
 
-    async def delete(self, id: str) -> None:
+    async def search(
+        self,
+        query_text: str,
+        query_vec: list[float],
+        top_k: int,
+        *,
+        repo: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[SearchResult]:
+        return await asyncio.to_thread(
+            self._sync_search, query_text, query_vec, top_k, repo, agent_id
+        )
+
+    def _sync_delete(self, id: str) -> None:
         if self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         self._conn.execute(
@@ -194,7 +218,10 @@ class SqliteStore:
         )
         self._conn.commit()
 
-    async def record_access(self, id: str) -> None:
+    async def delete(self, id: str) -> None:
+        await asyncio.to_thread(self._sync_delete, id)
+
+    def _sync_record_access(self, id: str) -> None:
         if self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         self._conn.execute(
@@ -204,14 +231,16 @@ class SqliteStore:
         )
         self._conn.commit()
 
-    async def list_recent(
+    async def record_access(self, id: str) -> None:
+        await asyncio.to_thread(self._sync_record_access, id)
+
+    def _sync_list_recent(
         self,
-        *,
-        repo: str | None = None,
-        tag: str | None = None,
-        type: str | None = None,
-        limit: int = 20,
-        agent_id: str | None = None,
+        repo: str | None,
+        tag: str | None,
+        type: str | None,
+        limit: int,
+        agent_id: str | None,
     ) -> list[Memory]:
         if self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
@@ -234,8 +263,23 @@ class SqliteStore:
         rows = self._conn.execute(query, params).fetchall()
         return [self._row_to_memory(r) for r in rows]
 
-    async def check_duplicate(
-        self, vec: list[float], threshold: float = 0.95
+    async def list_recent(
+        self,
+        *,
+        repo: str | None = None,
+        tag: str | None = None,
+        type: str | None = None,
+        limit: int = 20,
+        agent_id: str | None = None,
+    ) -> list[Memory]:
+        return await asyncio.to_thread(
+            self._sync_list_recent, repo, tag, type, limit, agent_id
+        )
+
+    def _sync_check_duplicate(
+        self,
+        vec: list[float],
+        threshold: float,
     ) -> str | None:
         if self._lance is None or self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
@@ -245,8 +289,10 @@ class SqliteStore:
         results = table.search(vec).metric("cosine").limit(5).to_list()  # type: ignore[unresolved-attribute]
         for r in results:
             distance = r["_distance"]
-            if distance >= (1.0 - threshold):
-                break
+            # cosine distance: 0.0 = identical, 1.0 = opposite
+            # threshold 0.95 → max distance 0.05 for a duplicate
+            if distance > (1.0 - threshold):
+                break  # results are sorted by distance; no closer matches remain
             row = self._conn.execute(
                 "SELECT id FROM memories WHERE id = ? AND deleted_at IS NULL",
                 (r["id"],),
@@ -254,6 +300,11 @@ class SqliteStore:
             if row:
                 return r["id"]
         return None
+
+    async def check_duplicate(
+        self, vec: list[float], threshold: float = 0.95
+    ) -> str | None:
+        return await asyncio.to_thread(self._sync_check_duplicate, vec, threshold)
 
     def _has_vec_table(self) -> bool:
         if self._lance is None:
