@@ -1,8 +1,9 @@
-"""MCP server — thin adapter exposing 8 tools. No business logic here."""
+"""MCP server — thin adapter exposing 8 tools + 1 prompt. No business logic here."""
 
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -334,3 +335,12 @@ async def forget(id: str, agent_id: str | None = None) -> dict:
     """
     logger.info("tool_invoked", tool="forget", id=id)
     return await _svc().forget(id, agent_id=agent_id)
+
+
+_SEED_WORKFLOW = (Path(__file__).parent / "skills" / "seed" / "SKILL.md").read_text()
+
+
+@mcp.prompt(description="Populate distill knowledge base from git history")
+def seed() -> str:
+    """Return the seed-from-git workflow."""
+    return _SEED_WORKFLOW
