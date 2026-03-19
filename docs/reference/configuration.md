@@ -54,14 +54,14 @@ Cross-encoder reranking improves search relevance by re-scoring results after hy
 
 Reranking adds latency (~200ms) and requires an external API call. Only recommended for GCP backend where search quality is critical. The privacy constraint is preserved — only distilled content (never raw input) is sent to the reranker.
 
-## GCP settings
+## PostgreSQL settings
 
-Only used when `BACKEND=gcp`.
+Used when `BACKEND=gcp`. Works with any PostgreSQL provider that supports pgvector (Cloud SQL, [Neon](../how-to/neon-backend.md), Supabase, self-hosted).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | — | PostgreSQL connection string |
-| `GCP_PROJECT` | — | GCP project ID |
+| `GCP_PROJECT` | — | GCP project ID (Cloud SQL / Vertex AI only) |
 | `GCP_LOCATION` | `us-central1` | GCP region for Vertex AI |
 | `CLOUD_SQL_CONNECTION` | — | Cloud SQL instance connection name |
 
