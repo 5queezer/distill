@@ -59,5 +59,6 @@ nav:
     - MCP Tools: reference/tools.md
     - Configuration: reference/configuration.md
   - Explanation:
+    - How Memory Works: explanation/how-memory-works.md
     - Architecture: explanation/architecture.md
     - Privacy Model: explanation/privacy-model.md

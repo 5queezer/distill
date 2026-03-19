@@ -21,3 +21,4 @@ lancedb/
 *.db
 .gitnexus
 .documcp/
+site/
