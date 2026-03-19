@@ -1,8 +1,8 @@
 ---
-title: Distill
+title: 🧪 Distill
 ---
 
-# Distill
+# 🧪 Distill
 
 **Privacy-first team memory for Claude Code.**
 

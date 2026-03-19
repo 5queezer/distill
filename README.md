@@ -1,4 +1,4 @@
-# Distill
+# 🧪 Distill
 
 [![CI](https://github.com/5queezer/distill/actions/workflows/ci.yml/badge.svg)](https://github.com/5queezer/distill/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
