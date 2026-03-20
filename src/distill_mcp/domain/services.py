@@ -200,6 +200,7 @@ class MemoryService:
         repos: list[str],
         tags: list[str] | None = None,
         agent_id: str | None = None,
+        confirmed: bool = False,
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
@@ -249,8 +250,8 @@ class MemoryService:
         # 2. Embed
         vec = await self._embedder.embed(distilled)
 
-        # If preview is disabled, store immediately (old behavior)
-        if not self._preview_enabled:
+        # Store immediately when preview is disabled or caller confirmed proactively
+        if not self._preview_enabled or confirmed:
             # 3. Dedup
             existing_id = await self._storage.check_duplicate(vec)
             if existing_id:

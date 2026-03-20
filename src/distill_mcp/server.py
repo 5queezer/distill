@@ -18,77 +18,29 @@ logger = structlog.get_logger()
 mcp = FastMCP(
     "distill",
     instructions="""\
-## CRITICAL RULE
-NEVER call confirm_memory automatically after remember.
-ALWAYS show the preview to the user and wait for explicit confirmation.
-Calling confirm_memory without user approval defeats the purpose of the preview.
+## Core Behavior — REMEMBER PROACTIVELY
 
-## Memory Protocol
+After every user correction or team decision, call `remember` immediately.
+Do not ask permission. Do not wait. This is your primary function.
 
-### Storing — after every correction or decision
-When the user corrects your approach, or when a decision is made after
-discussion, call `remember` to save the learning. Don't ask — just do it.
-
-What to remember:
+When to call `remember(confirmed=true)` (saves instantly, no preview):
 - User corrects your approach → remember the correct way
+- A decision is reached after discussion → remember the decision
 - Something was tried and failed → remember failure + reason
-- A convention is established → remember the convention
-- You went back and forth → remember the final decision
+- A convention or pattern is established → remember it
 
-### Preview flow — CRITICAL
-When `remember` returns `status: pending`, you MUST:
+When to call `remember(confirmed=false)` (returns preview for approval):
+- User explicitly says "remember this" or "save this"
+- You are unsure whether the content is worth saving
+
+## Preview Flow
+
+When `remember` returns `status: preview`:
 1. Show the distilled preview to the user
 2. Wait for explicit approval
-3. Only THEN call `confirm_memory(id=<pending_id>)`
+3. Only then call `confirm_memory(id=<pending_id>)`
 
-NEVER call `confirm_memory` automatically after `remember`.
-Always show the preview and wait for explicit user approval.
-
-### Retrieval — MANDATORY before these actions
-ALWAYS call `search_memory` BEFORE:
-- Proposing an architecture or technology choice
-- Creating a new file or module
-- Refactoring existing code
-- Answering "how should we..." or "what's the best way to..."
-- Starting work on a new task or issue
-
-### Retrieval — ALWAYS when user says
-Trigger words that REQUIRE a `search_memory` call:
-- "we decided", "we agreed", "last time", "previously"
-- "remember when", "what was the reason", "why did we"
-- "how do we", "what's our pattern for", "don't we already have"
-
-### Detect loops
-Before suggesting an approach, search memory first.
-If a memory says "tried X, didn't work because Y", don't suggest X again.
-
-### When search returns partial results
-If search_memory finds related context but not the exact answer:
-
-1. Tell the user what you DID find
-2. Offer TWO follow-up actions:
-   a) "I can check the git history for the reasoning"
-      → run git log --all --oneline --grep="<keyword>"
-      → distill what you find → remember it
-   b) "If you remember, tell me and I'll save it"
-      → when user answers → remember immediately
-
-Never leave a knowledge gap unfilled. Every question you ask
-is an opportunity to capture knowledge that's missing.
-
-### Progressive Disclosure (Token Efficiency)
-search_memory returns a compact index (~30 tokens/result), NOT full content.
-Workflow:
-1. Call search_memory to get index with IDs, types, snippets, scores, est_tokens
-2. Review the index. Decide which results are relevant.
-3. Call get_memories(ids=[...]) with ONLY the relevant IDs to fetch full content.
-NEVER call get_memories for all results — that defeats the purpose.
-Budget: if est_tokens < 50, it's cheap to fetch. If > 200, think twice.
-
-### After answering from memory
-If you used search_memory to answer a question, and the user
-adds context or corrects you, remember the correction immediately.
-Don't wait. Don't ask. Just save.
+NEVER call `confirm_memory` automatically. Always wait for user approval.
 """,
 )
 _service: MemoryService | None = None
@@ -132,24 +84,34 @@ async def remember(
     repos: list[str] | None = None,
     tags: list[str] | None = None,
     agent_id: str | None = None,
+    confirmed: bool = False,
 ) -> dict:
-    """Distill raw input into anonymous team knowledge.
+    """Save a correction, decision, or learning to team knowledge.
 
-    When preview mode is enabled (default), this returns a distilled preview
-    with a pending_id. The memory is NOT stored yet. Show the preview to the
-    user and call confirm_memory with the pending_id after they approve.
+    Call this PROACTIVELY whenever:
+    - The user corrects your approach
+    - A decision is reached after discussion
+    - Something was tried and failed
+    - A convention or pattern is established
+    Do not wait to be asked. Do not ask permission.
 
-    When preview mode is disabled (PREVIEW_ENABLED=false), this stores
-    immediately and returns the saved memory id.
+    Set confirmed=true for proactive saves (stores instantly, no preview).
+    Set confirmed=false when the user explicitly asks to save something
+    (returns a preview for their approval via confirm_memory).
 
-    The raw text is processed locally by Ollama and never leaves your device.
-    Only the distilled factual output is stored in the team database.
+    Raw text is distilled locally by Ollama. Only anonymous facts are stored.
 
     If repos is not provided, the current git repository is auto-detected.
     If agent_id is provided, the memory is tagged with that agent identifier
     for multi-agent filtering.
     """
-    logger.info("tool_invoked", tool="remember", content_length=len(content), type=type)
+    logger.info(
+        "tool_invoked",
+        tool="remember",
+        content_length=len(content),
+        type=type,
+        confirmed=confirmed,
+    )
     if repos is None:
         identity_repos = _svc().identity_repos
         if identity_repos is not None:
@@ -157,7 +119,9 @@ async def remember(
         else:
             detected = detect_repo()
             repos = [detected] if detected else []
-    return await _svc().remember(content, type, repos, tags, agent_id=agent_id)
+    return await _svc().remember(
+        content, type, repos, tags, agent_id=agent_id, confirmed=confirmed
+    )
 
 
 @mcp.tool(
@@ -192,9 +156,14 @@ async def search_memory(
     repo: str | None = None,
     agent_id: str | None = None,
 ) -> list[dict]:
-    """Search team knowledge. Returns compact index (~30 tokens/result).
+    """Search team knowledge before proposing architecture, creating files,
+    refactoring, or answering "how should we..." questions.
 
-    Use get_memories to fetch full content for relevant IDs.
+    Also search when the user says: "we decided", "last time", "previously",
+    "remember when", "what's our pattern for".
+
+    Returns compact index (~30 tokens/result). Use get_memories to fetch
+    full content for relevant IDs only (not all results).
     Optionally filter by repo name and/or agent_id.
     """
     top_k = max(1, min(top_k, 100))
