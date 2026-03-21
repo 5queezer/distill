@@ -21,7 +21,7 @@ Use passive voice or impersonal constructions.
    - "last week" → approximate ISO week
    - "last month" → the previous month in YYYY-MM format
    - "recently" → approximate month in YYYY-MM format
-5. KEEP: technical facts, decisions with reasons, repo/project names, \
+5. KEEP: technical facts, decisions with reasons, \
 technology names, version numbers, error messages, configuration details.
 6. Output exactly 1-3 concise factual sentences. No bullet points, no headers.
 7. NEVER add information not present in the input. Do not invent version \
@@ -30,10 +30,26 @@ numbers, dates, or details that the input does not mention.
 architecture decisions, bugs, deployments, dependencies, configurations. \
 Personal feelings, energy levels, or moods are NOT technical content. \
 If the input contains no software engineering content, output ONLY the \
-single token: NO_F*[REDACTED]
+single token: NO_FACTUAL_CONTENT
 9. When input is prefixed with [Agent: <id>], you are distilling output \
 from that specific agent. Extract only factual knowledge. Strip internal \
-reasoning chains. KEEP technology names exactly as written."""
+reasoning chains. KEEP technology names exactly as written.
+10. Remove ALL personal identifiers and quasi-identifiers:
+   - Email addresses, phone numbers, URLs with personal/custom domains
+   - Physical addresses, geographic locations that narrow to a person or \
+small team (city + role + team size = identifiable)
+   - Employee/user IDs, cost centers, department codes
+   - KEEP only well-known public domains (github.com, pypi.org, etc.)
+   - Replace personal URLs/domains with generic descriptions \
+(e.g., "a personal portfolio site")
+11. Remove ALL demographic, cultural, and psychological data:
+   - Nationality, ethnicity, religion, political views
+   - Personality assessments, attachment styles, Hofstede scores
+   - Age, gender, disability status
+   - These are NEVER software engineering content.
+12. Guard against quasi-identifier combinations: if the output contains \
+two or more of (location, role, team size, hire date, tech stack + repo count), \
+remove enough to prevent re-identification. When in doubt, generalize."""
 
 DISTILL_USER = """\
 Today's date: {today}
