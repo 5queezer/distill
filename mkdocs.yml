@@ -62,6 +62,7 @@ nav:
     - MCP Tools: reference/tools.md
     - Configuration: reference/configuration.md
   - Explanation:
+    - When to Use Distill: explanation/when-to-use-distill.md
     - How Memory Works: explanation/how-memory-works.md
     - Architecture: explanation/architecture.md
     - Privacy Model: explanation/privacy-model.md

@@ -54,6 +54,24 @@ Every "memory MCP" stores your raw text in a database. Distill doesn't. The loca
 
 Based on public documentation as of March 2026.
 
+## When to use Distill vs. Skills vs. CLAUDE.md
+
+Claude Code has three persistence mechanisms. They serve different purposes and have different half-lives.
+
+| Mechanism | What it stores | Half-life | Example |
+|-----------|---------------|-----------|---------|
+| **CLAUDE.md** | Conventions, guardrails, project rules | Months–years | "We use gRPC, not REST" / "Never skip pre-commit hooks" |
+| **Skills** | Repeatable processes, recipes | Weeks–months | "How to deploy to Cloud Run with an oauth2-proxy sidecar" |
+| **Distill** | Decision context, failure postmortems, team knowledge | Days–weeks | "We chose X over Y because Z failed under load" |
+
+**Use CLAUDE.md** when the knowledge is deterministic and should apply to every session — coding standards, architectural constraints, tooling preferences. Every conversation reads it automatically.
+
+**Use a Skill** when the knowledge is procedural and reusable — a step-by-step process that you'd otherwise explain from scratch each time. Skills are invoked on demand, not loaded automatically.
+
+**Use Distill** when the knowledge is contextual and emerged from work — why a decision was made, what was tried and failed, what surprised you. Distill captures the *reasoning* that code and commit messages don't preserve, strips PII and secrets automatically, and makes it searchable across sessions and team members.
+
+The three complement each other. A debugging session might produce all three: a CLAUDE.md rule ("always check X before Y"), a skill (the debugging procedure itself), and a distill memory (what caused the specific incident and why the obvious fix didn't work).
+
 ## Documentation
 
 - [Getting Started](https://5queezer.github.io/distill/tutorials/getting-started/) — full tutorial
