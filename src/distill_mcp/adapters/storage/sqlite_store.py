@@ -255,6 +255,39 @@ class SqliteStore:
                 return r["id"]
         return None
 
+    async def find_related(
+        self,
+        vec: list[float],
+        *,
+        threshold: float = 0.80,
+        top_k: int = 3,
+        repo: str | None = None,
+    ) -> list[tuple[str, float]]:
+        if self._lance is None or self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
+        if not self._has_vec_table():
+            return []
+        table = self._lance.open_table("vectors")
+        # Fetch extra candidates to account for deleted/repo-filtered rows
+        results = table.search(vec).metric("cosine").limit(top_k * 3).to_list()  # type: ignore[unresolved-attribute]
+        out: list[tuple[str, float]] = []
+        for r in results:
+            similarity = 1.0 - r["_distance"]
+            if similarity < threshold:
+                break
+            row = self._conn.execute(
+                "SELECT id, repos FROM memories WHERE id = ? AND deleted_at IS NULL",
+                (r["id"],),
+            ).fetchone()
+            if not row:
+                continue
+            if repo is not None and repo not in json.loads(row["repos"]):
+                continue
+            out.append((r["id"], round(similarity, 4)))
+            if len(out) >= top_k:
+                break
+        return out
+
     def _has_vec_table(self) -> bool:
         if self._lance is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")

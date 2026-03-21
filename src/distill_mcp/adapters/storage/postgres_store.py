@@ -347,6 +347,33 @@ class PostgresStore:
             return row["id"]
         return None
 
+    async def find_related(
+        self,
+        vec: list[float],
+        *,
+        threshold: float = 0.80,
+        top_k: int = 3,
+        repo: str | None = None,
+    ) -> list[tuple[str, float]]:
+        pool = await self._ensure_pool()
+        query = (
+            "SELECT id, 1 - (embedding <=> $1::vector) AS similarity "
+            "FROM memories WHERE deleted_at IS NULL AND embedding IS NOT NULL "
+            "AND 1 - (embedding <=> $1::vector) >= $2"
+        )
+        params: list = [vec, threshold]
+        idx = 3
+        if repo is not None:
+            query += f" AND repos @> ${idx}::jsonb"
+            params.append(json.dumps([repo]))
+            idx += 1
+        query += f" ORDER BY similarity DESC LIMIT ${idx}"
+        params.append(top_k)
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [(r["id"], round(r["similarity"], 4)) for r in rows]
+
     # -- Internal helpers --
 
     async def _fts_search(

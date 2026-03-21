@@ -36,6 +36,20 @@ class StoragePort(Protocol):
     async def check_duplicate(
         self, vec: list[float], threshold: float = 0.95
     ) -> str | None: ...
+    async def find_related(
+        self,
+        vec: list[float],
+        *,
+        threshold: float = 0.80,
+        top_k: int = 3,
+        repo: str | None = None,
+    ) -> list[tuple[str, float]]:
+        """Find memories above similarity threshold.
+
+        Returns list of (id, similarity_score) sorted by similarity desc.
+        Used for contradiction detection — caller decides if results conflict.
+        """
+        ...
 
 
 class EmbeddingPort(Protocol):
