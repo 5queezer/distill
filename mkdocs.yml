@@ -55,6 +55,8 @@ nav:
     - Seed from Git: how-to/seed-from-git.md
     - GCP Backend: how-to/gcp-backend.md
     - Neon Backend: how-to/neon-backend.md
+    - AWS Backend: how-to/aws-backend.md
+    - Azure Backend: how-to/azure-backend.md
   - Reference:
     - MCP Tools: reference/tools.md
     - Configuration: reference/configuration.md
