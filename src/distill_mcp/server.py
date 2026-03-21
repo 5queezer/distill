@@ -194,6 +194,7 @@ async def search_memory(
         {
             "id": r.id,
             "type": r.type,
+            "level": r.level,
             "snippet": r.snippet,
             "repos": r.repos,
             "score": round(r.score, 4),
@@ -222,6 +223,7 @@ async def get_memories(ids: list[str]) -> list[dict]:
             "id": d.id,
             "content": d.content,
             "type": d.type,
+            "level": d.level,
             "repos": d.repos,
             "tags": d.tags,
             "score": d.score,
@@ -299,6 +301,7 @@ async def list_recent(
         {
             "id": m.id,
             "type": m.type,
+            "level": m.level,
             "snippet": m.snippet,
             "repos": m.repos,
             "created_at": m.created_at.isoformat(),

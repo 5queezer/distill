@@ -26,6 +26,20 @@ class SearchResult:
     score: float  # RRF hybrid score
 
 
+def derive_level(memory_type: str, repos: list[str]) -> str:
+    """Derive memory level from type and repo scope.
+
+    - short-term: ephemeral context
+    - long-term: durable decisions, patterns, failures, dependencies
+    - shared: applies across multiple repos
+    """
+    if len(repos) > 1:
+        return "shared"
+    if memory_type == "context":
+        return "short-term"
+    return "long-term"
+
+
 @dataclass
 class MemoryIndex:
     """Compact search result for progressive disclosure (Layer 1)."""
@@ -37,6 +51,7 @@ class MemoryIndex:
     score: float
     created_at: datetime
     est_tokens: int  # len(content) // 4
+    level: str = ""
     agent_id: str | None = None
 
 
@@ -52,5 +67,6 @@ class MemoryDetail:
     score: float | None
     created_at: datetime
     author: str | None
+    level: str = ""
     agent_id: str | None = None
     est_tokens: int = 0
