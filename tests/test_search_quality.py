@@ -134,9 +134,10 @@ class TestNoiseFilter:
 
 class TestMinScore:
     async def test_drops_low_score_results(self) -> None:
+        # Old memories (recency ≈ 0) with low RRF scores stay below threshold
         results_from_db = [
-            SearchResult(memory=_memory(), score=0.016),
-            SearchResult(memory=_memory(), score=0.02),
+            SearchResult(memory=_memory(days_old=365), score=0.016),
+            SearchResult(memory=_memory(days_old=365), score=0.02),
         ]
         results = await _service(results_from_db).search("fastmcp")
         assert len(results) == 0
@@ -150,14 +151,33 @@ class TestMinScore:
         assert len(results) == 2
 
     async def test_mixed_scores_filters_correctly(self) -> None:
+        # Fresh memories with decent scores pass; old memory with low score filtered
         results_from_db = [
             SearchResult(memory=_memory(), score=0.7),
-            SearchResult(memory=_memory(), score=0.1),
+            SearchResult(memory=_memory(days_old=365), score=0.01),
             SearchResult(memory=_memory(), score=0.5),
         ]
         results = await _service(results_from_db).search("query")
         assert len(results) == 2
         assert all(r.score >= MIN_SEARCH_SCORE for r in results)
+
+    async def test_realistic_rrf_scores_not_filtered(self) -> None:
+        """Regression: #76 — fresh memories with real RRF scores must pass threshold.
+
+        RRF with k=60: rank-1 in both lists → 2/61 ≈ 0.033.
+        After recency boost for a fresh memory this becomes ~0.178.
+        """
+        rrf_both_rank1 = 2.0 / 61  # ≈ 0.033
+        rrf_single_rank1 = 1.0 / 61  # ≈ 0.016
+        results_from_db = [
+            SearchResult(memory=_memory(), score=rrf_both_rank1),
+            SearchResult(memory=_memory(), score=rrf_single_rank1),
+        ]
+        results = await _service(results_from_db).search("query")
+        assert len(results) == 2, (
+            f"Fresh memories with realistic RRF scores should not be filtered. "
+            f"Scores after boost: {[r.score for r in results]}"
+        )
 
 
 # -- Recency boost tests --
