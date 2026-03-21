@@ -31,7 +31,6 @@ def _init_store() -> tuple:
 
 def _run_server() -> None:
     import asyncio
-    from pathlib import Path
 
     from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
     from distill_mcp.domain.services import MemoryService
@@ -127,8 +126,6 @@ def _run_server() -> None:
 
         distiller = OllamaDistiller(host=settings.ollama_host, model=llm_model)
 
-    private_dir = Path(settings.data_dir).expanduser() / "private"
-
     scanner = SecretScanner()
 
     reranker = None
@@ -145,9 +142,6 @@ def _run_server() -> None:
         embedder=embedder,
         distiller=distiller,
         distill_enabled=settings.distill_enabled,
-        preview_enabled=settings.preview_enabled,
-        preview_ttl_seconds=settings.preview_ttl_seconds,
-        private_dir=private_dir,
         scanner=scanner,
         max_memory_size=settings.max_memory_size,
         identity=identity,
