@@ -564,3 +564,42 @@ class MemoryService:
             }
         await self._storage.delete(id)
         return {"status": "forgotten", "id": id}
+
+    async def identify_stale(
+        self,
+        *,
+        repo: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Find memories that are likely stale based on age and access patterns.
+
+        A memory is stale when its Weibull survival score drops below 0.1
+        AND it has been accessed fewer than 2 times.
+        """
+        now = datetime.now(UTC)
+        all_memories = await self._storage.list_recent(repo=repo, limit=200)
+        stale: list[dict] = []
+        for mem in all_memories:
+            age_days = (now - mem.created_at).days
+            survival = self._weibull_recency(age_days, mem.type)
+            # Stale: low survival score AND rarely accessed
+            if survival < 0.1 and mem.access_count < 2:
+                days_since_access = None
+                if mem.last_accessed_at:
+                    days_since_access = (now - mem.last_accessed_at).days
+                snippet = mem.content[:80] + ("..." if len(mem.content) > 80 else "")
+                stale.append(
+                    {
+                        "id": mem.id,
+                        "type": mem.type,
+                        "snippet": snippet,
+                        "age_days": age_days,
+                        "access_count": mem.access_count,
+                        "days_since_access": days_since_access,
+                        "survival_score": round(survival, 4),
+                        "repos": mem.repos,
+                    }
+                )
+                if len(stale) >= limit:
+                    break
+        return stale

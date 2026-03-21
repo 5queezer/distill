@@ -325,6 +325,25 @@ async def forget(id: str, agent_id: str | None = None) -> dict:
     return await _svc().forget(id, agent_id=agent_id)
 
 
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
+async def list_stale(
+    repo: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """List memories that are likely stale based on age and access patterns.
+
+    Stale memories have low Weibull survival scores and few accesses.
+    Review the list and use forget() to clean up outdated knowledge.
+    """
+    limit = max(1, min(limit, 100))
+    logger.info("tool_invoked", tool="list_stale", limit=limit)
+    return await _svc().identify_stale(repo=repo, limit=limit)
+
+
 _SEED_WORKFLOW = (Path(__file__).parent / "skills" / "seed" / "SKILL.md").read_text()
 
 
