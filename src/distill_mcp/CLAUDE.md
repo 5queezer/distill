@@ -40,12 +40,13 @@ def remember(content: str, type: str, repos: list[str], tags: list[str] | None =
 | `list_recent` | Filter by repo/tag/type | R |
 | `forget` | Soft-delete | W |
 
-## Two backends
+## Three independent axes
 
-- `BACKEND=local` — SQLite + FTS5 + LanceDB. Ollama for everything. $0.
-- `BACKEND=gcp` — Cloud SQL PostgreSQL + pgvector. Vertex AI for embeddings only. Distillation still local Ollama. ~$11/mo.
+- `BACKEND` — storage: `local` (SQLite + LanceDB) or `postgres` (PostgreSQL + pgvector)
+- `EMBEDDING_PROVIDER` — embeddings: `ollama` | `gemini` | `vertex` | `bedrock` | `azure`
+- `DISTILLER_PROVIDER` — distillation: `ollama` | `gemini`
 
-Backend is selected in `__main__.py` via config, injected into services as ports.
+All three are selected in `__main__.py` via config, injected into services as ports.
 
 ## Code style
 

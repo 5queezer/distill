@@ -28,11 +28,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ## Step 3: Configure environment
 
 ```bash
-export BACKEND=gcp
+export BACKEND=postgres
 export DATABASE_URL="postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/distill?sslmode=require"
 ```
-
-`BACKEND=gcp` selects the PostgreSQL adapter — it works with any PostgreSQL provider, not just GCP.
 
 ## Step 4: Start Distill
 

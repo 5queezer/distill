@@ -4,7 +4,7 @@ title: AWS Backend Setup
 
 # AWS Backend (RDS + Bedrock)
 
-The AWS backend uses Amazon RDS PostgreSQL with pgvector for storage and Amazon Bedrock Titan Embed v2 for embeddings. Distillation still runs locally via Ollama — the privacy guarantee is preserved.
+The AWS setup uses Amazon RDS PostgreSQL with pgvector for storage and Amazon Bedrock Titan Embed v2 for embeddings.
 
 ## Prerequisites
 
@@ -39,8 +39,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ## Step 3: Configure environment
 
 ```bash
-export BACKEND=aws
+export BACKEND=postgres
 export DATABASE_URL="postgresql://distill:<your-password>@distill-db.<id>.<region>.rds.amazonaws.com:5432/distill"
+export EMBEDDING_PROVIDER=bedrock
 export AWS_REGION=us-east-1
 ```
 

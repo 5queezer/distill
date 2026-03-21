@@ -4,7 +4,7 @@ title: Azure Backend Setup
 
 # Azure Backend (PostgreSQL + OpenAI)
 
-The Azure backend uses Azure Database for PostgreSQL Flexible Server with pgvector for storage and Azure OpenAI for embeddings. Distillation still runs locally via Ollama — the privacy guarantee is preserved.
+The Azure setup uses Azure Database for PostgreSQL Flexible Server with pgvector for storage and Azure OpenAI for embeddings.
 
 ## Prerequisites
 
@@ -51,8 +51,9 @@ az cognitiveservices account deployment create \
 ## Step 4: Configure environment
 
 ```bash
-export BACKEND=azure
+export BACKEND=postgres
 export DATABASE_URL="postgresql://distill:<your-password>@distill-db.postgres.database.azure.com:5432/distill?sslmode=require"
+export EMBEDDING_PROVIDER=azure
 export AZURE_OPENAI_ENDPOINT="https://distill-openai.openai.azure.com/"
 export AZURE_OPENAI_API_KEY="<your-api-key>"
 ```
