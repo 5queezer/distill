@@ -27,8 +27,8 @@ graph TB
 
     subgraph "Adapters (outer ring)"
         SQL["sqlite_store.py / postgres_store.py"]
-        EMB["ollama_embed.py / vertex_embed.py"]
-        DST["ollama_distill.py"]
+        EMB["ollama_embed.py / vertex_embed.py / gemini_embed.py"]
+        DST["ollama_distill.py / gemini_distill.py"]
         SCN["secret_scanner.py (secrets + PII)"]
         RRK["jina_rerank.py (opt-in)"]
     end
@@ -48,7 +48,9 @@ graph TB
     SCN -.->|implements| PRT
     RRK -.->|implements| PRT
     DST --> OLLAMA
+    DST -.->|or| GEMINI["Gemini API (cloud)"]
     EMB --> OLLAMA
+    EMB -.->|or| GEMINI
     SQL --> DB
     SQL --> VEC
 ```
@@ -68,9 +70,11 @@ src/distill_mcp/
 │   │   └── postgres_store.py  # StoragePort → asyncpg + pgvector + tsvector
 │   ├── embeddings/
 │   │   ├── ollama_embed.py    # EmbeddingPort → local Ollama
-│   │   └── vertex_embed.py    # EmbeddingPort → Vertex AI
+│   │   ├── vertex_embed.py    # EmbeddingPort → Vertex AI
+│   │   └── gemini_embed.py    # EmbeddingPort → Gemini API
 │   ├── distiller/
-│   │   └── ollama_distill.py  # DistillerPort → local Ollama (always local)
+│   │   ├── ollama_distill.py  # DistillerPort → local Ollama
+│   │   └── gemini_distill.py  # DistillerPort → Gemini API
 │   ├── scanner/
 │   │   └── secret_scanner.py  # ScannerPort → secrets + PII redaction
 │   └── reranker/
@@ -87,22 +91,32 @@ src/distill_mcp/
 
 This means you can swap SQLite for PostgreSQL, or Ollama embeddings for Vertex AI, without touching any business logic.
 
-## Backend options
+## Configuration axes
 
-| Backend | Storage | Vectors | Embeddings | Distillation | Cost |
-|---------|---------|---------|------------|--------------|------|
-| `local` | SQLite + FTS5 | LanceDB | Ollama | Ollama | $0 |
-| `gcp` | Cloud SQL PostgreSQL | pgvector | Vertex AI | Ollama (local) | ~$11/mo |
-| `aws` | RDS PostgreSQL | pgvector | Bedrock | Ollama (local) | ~$15/mo |
-| `azure` | Azure Database for PostgreSQL | pgvector | Azure OpenAI | Ollama (local) | ~$14/mo |
+Storage, embeddings, and distillation are configured independently:
 
-Distillation is **always local** regardless of backend — this is the privacy guarantee.
+| Setting | Options |
+|---------|---------|
+| `BACKEND` | `local` (SQLite + LanceDB) or `postgres` (PostgreSQL + pgvector) |
+| `EMBEDDING_PROVIDER` | `ollama`, `gemini`, `vertex`, `bedrock`, `azure` |
+| `DISTILLER_PROVIDER` | `ollama`, `gemini` |
+
+### Example configurations
+
+| Use case | Storage | Embeddings | Distillation | Cost |
+|----------|---------|------------|--------------|------|
+| Local-only | `local` | `ollama` | `ollama` | $0 |
+| Cloud-free (no GPU) | `local` | `gemini` | `gemini` | $0 (free tier) |
+| Team (GCP) | `postgres` | `vertex` | `ollama` | ~$11/mo |
+| Team (GCP, no GPU) | `postgres` | `vertex` | `gemini` | ~$11/mo |
+| Team (AWS) | `postgres` | `bedrock` | `ollama` | ~$15/mo |
+| Team (Azure) | `postgres` | `azure` | `ollama` | ~$14/mo |
 
 ## Key execution flows
 
 ### Remember (two-phase commit)
 
-1. `remember()` sends raw text to local Ollama for distillation
+1. `remember()` sends raw text to the distillation provider
 2. Scanner checks the output for leaked secrets
 3. Dedup check rejects if cosine similarity > 0.95 with existing memory
 4. Returns a preview with `pending_id` — memory is NOT stored yet

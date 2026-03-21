@@ -4,25 +4,76 @@ title: Configuration
 
 # Configuration Reference
 
-All settings are controlled via environment variables (or a `.env` file). Defaults are shown below.
+All settings are controlled via environment variables (or a `.env` file).
 
-## Core settings
+## Storage
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BACKEND` | `local` | Backend type: `local`, `gcp`, `postgres`, `aws`, `azure` |
+| `BACKEND` | `local` | Storage backend: `local` (SQLite + LanceDB) or `postgres` (PostgreSQL + pgvector) |
 | `DATA_DIR` | `~/.team-memory` | Local data directory (SQLite, LanceDB, private store) |
+| `DATABASE_URL` | — | PostgreSQL connection string (required when `BACKEND=postgres`) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
-## Ollama settings
+## Embedding provider
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBEDDING_PROVIDER` | `ollama` | Provider: `ollama`, `gemini`, `vertex`, `bedrock`, `azure` |
+| `EMBEDDING_MODEL` | *(per provider)* | Embedding model name. Defaults: ollama=`nomic-embed-text`, gemini=`text-embedding-004`, vertex=`text-embedding-005`, bedrock=`amazon.titan-embed-text-v2:0`, azure=`text-embedding-3-small` |
+
+All embeddings must produce **768-dimensional** vectors.
+
+## Distillation provider
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DISTILLER_PROVIDER` | `ollama` | Provider: `ollama`, `gemini` |
+| `LLM_MODEL` | *(per provider)* | Distillation model name. Defaults: ollama=`gemma3:4b`, gemini=`gemini-2.0-flash` |
+
+!!! warning "Privacy tradeoff"
+    With `DISTILLER_PROVIDER=gemini`, raw text is sent to Google's API for distillation. With `ollama`, raw text stays on your device.
+
+## Provider credentials
+
+### Ollama (default, no credentials)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
-| `LLM_MODEL` | `gemma3:4b` | Model for distillation |
-| `EMBEDDING_MODEL` | `nomic-embed-text` | Model for embeddings (must produce 768-dim vectors) |
 
-Ollama also reads its own environment variables for GPU control (`OLLAMA_NUM_GPU`, `CUDA_VISIBLE_DEVICES`, etc.). See the [GPU Setup guide](../how-to/gpu-setup.md) for hardware-specific configuration.
+Ollama also reads its own environment variables for GPU control (`OLLAMA_NUM_GPU`, `CUDA_VISIBLE_DEVICES`, etc.). See the [GPU Setup guide](../how-to/gpu-setup.md).
+
+### Gemini
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | — | Required when `EMBEDDING_PROVIDER=gemini` or `DISTILLER_PROVIDER=gemini` |
+
+Free tier available at [AI Studio](https://aistudio.google.com/apikey). See [Gemini Backend](../how-to/gemini-backend.md).
+
+### Vertex AI
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GCP_PROJECT` | — | GCP project ID (required when `EMBEDDING_PROVIDER=vertex`) |
+| `GCP_LOCATION` | `us-central1` | GCP region |
+| `CLOUD_SQL_CONNECTION` | — | Cloud SQL instance connection name |
+
+### Bedrock
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AWS_REGION` | `us-east-1` | AWS region |
+
+Uses the default AWS credential chain (environment variables, `~/.aws/credentials`, or instance role).
+
+### Azure OpenAI
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_OPENAI_ENDPOINT` | — | Endpoint URL (required when `EMBEDDING_PROVIDER=azure`) |
+| `AZURE_OPENAI_API_KEY` | — | API key (required when `EMBEDDING_PROVIDER=azure`) |
 
 ## Privacy & review
 
@@ -42,9 +93,7 @@ Ollama also reads its own environment variables for GPU control (`OLLAMA_NUM_GPU
 | `MAX_MEMORY_SIZE` | `8000` | Maximum memory content size in characters |
 | `FTS_LANGUAGE` | `simple` | Full-text search language configuration |
 
-## Reranking (optional, GCP-only)
-
-Cross-encoder reranking improves search relevance by re-scoring results after hybrid search.
+## Reranking (optional)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -52,46 +101,12 @@ Cross-encoder reranking improves search relevance by re-scoring results after hy
 | `JINA_API_KEY` | — | Jina Reranker API key |
 | `RERANK_MODEL` | `jina-reranker-v2-base-multilingual` | Reranker model |
 
-Reranking adds latency (~200ms) and requires an external API call. Only recommended for GCP backend where search quality is critical. The privacy constraint is preserved — only distilled content (never raw input) is sent to the reranker.
-
-## PostgreSQL settings
-
-Used when `BACKEND=gcp`. Works with any PostgreSQL provider that supports pgvector (Cloud SQL, [Neon](../how-to/neon-backend.md), Supabase, self-hosted).
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `GCP_PROJECT` | — | GCP project ID (Cloud SQL / Vertex AI only) |
-| `GCP_LOCATION` | `us-central1` | GCP region for Vertex AI |
-| `CLOUD_SQL_CONNECTION` | — | Cloud SQL instance connection name |
-
-## AWS settings
-
-Used when `BACKEND=aws`. Uses Amazon Bedrock for embeddings.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
-| `AWS_BEDROCK_MODEL` | `amazon.titan-embed-text-v2:0` | Bedrock embedding model |
-
-## Azure settings
-
-Used when `BACKEND=azure`. Uses Azure OpenAI for embeddings.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AZURE_OPENAI_ENDPOINT` | — | Azure OpenAI endpoint URL (required when `BACKEND=azure`) |
-| `AZURE_OPENAI_API_KEY` | — | Azure OpenAI API key (required when `BACKEND=azure`) |
-| `AZURE_OPENAI_DEPLOYMENT` | `text-embedding-3-small` | Azure OpenAI deployment name |
-
 ## Port interfaces
 
-Distill uses Clean Architecture ports. Each setting selects an adapter:
-
-| Port | `local` adapter | `gcp` adapter | `aws` adapter | `azure` adapter |
-|------|----------------|---------------|---------------|-----------------|
-| `StoragePort` | SQLite + FTS5 + LanceDB | Cloud SQL + pgvector + tsvector | Cloud SQL + pgvector + tsvector | Cloud SQL + pgvector + tsvector |
-| `EmbeddingPort` | Ollama (`nomic-embed-text`) | Vertex AI (`text-embedding-005`) | Bedrock (`amazon.titan-embed-text-v2:0`) | Azure OpenAI (`text-embedding-3-small`) |
-| `DistillerPort` | Ollama (`gemma3:4b`) | Ollama (`gemma3:4b`) — always local | Ollama (`gemma3:4b`) — always local | Ollama (`gemma3:4b`) — always local |
-| `ScannerPort` | gitleaks-based secret detection | gitleaks-based secret detection | gitleaks-based secret detection | gitleaks-based secret detection |
-| `RerankerPort` | — (not used) | Jina Reranker API (opt-in) | — (not used) | — (not used) |
+| Port | Adapters |
+|------|----------|
+| `StoragePort` | `local`: SQLite + FTS5 + LanceDB | `postgres`: PostgreSQL + pgvector + tsvector |
+| `EmbeddingPort` | `ollama` `gemini` `vertex` `bedrock` `azure` — selected by `EMBEDDING_PROVIDER` |
+| `DistillerPort` | `ollama` `gemini` — selected by `DISTILLER_PROVIDER` |
+| `ScannerPort` | secrets + PII detection (always active) |
+| `RerankerPort` | Jina Reranker API (opt-in via `RERANK_ENABLED`) |

@@ -4,7 +4,7 @@ title: GCP Backend Setup
 
 # GCP Backend Setup
 
-The GCP backend uses Cloud SQL (PostgreSQL + pgvector) for storage and Vertex AI for embeddings. Distillation still runs locally via Ollama — the privacy guarantee is preserved.
+The GCP setup uses Cloud SQL (PostgreSQL + pgvector) for storage and Vertex AI for embeddings.
 
 ## Prerequisites
 
@@ -42,9 +42,9 @@ chmod +x cloud-sql-proxy
 ## Step 4: Configure environment
 
 ```bash
-export BACKEND=gcp
-export DB_HOST=127.0.0.1        # via Cloud SQL Proxy
-export DB_NAME=distill
+export BACKEND=postgres
+export DATABASE_URL="postgresql://postgres:password@127.0.0.1:5432/distill"
+export EMBEDDING_PROVIDER=vertex
 export GCP_PROJECT=your-project
 export GCP_LOCATION=us-central1
 ```

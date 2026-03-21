@@ -6,14 +6,40 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    backend: str = "local"
+    # Storage backend
+    backend: str = "local"  # local | postgres
     database_url: str | None = (
         None  # e.g. postgresql://user:pass@localhost:5432/distill
     )
     data_dir: str = "~/.team-memory"
+
+    # Embedding provider
+    embedding_provider: str = "ollama"  # ollama | gemini | vertex | bedrock | azure
+    embedding_model: str | None = None  # default per provider (see __main__.py)
+
+    # Distillation provider
+    distiller_provider: str = "ollama"  # ollama | gemini
+    llm_model: str | None = None  # default per provider (see __main__.py)
+
+    # Ollama (used when embedding_provider=ollama or distiller_provider=ollama)
     ollama_host: str = "http://localhost:11434"
-    embedding_model: str = "nomic-embed-text"
-    llm_model: str = "gemma3:4b"
+
+    # Gemini (used when embedding_provider=gemini or distiller_provider=gemini)
+    gemini_api_key: str | None = None
+
+    # Vertex AI (used when embedding_provider=vertex)
+    gcp_project: str | None = None
+    gcp_location: str = "us-central1"
+    cloud_sql_connection: str | None = None
+
+    # Bedrock (used when embedding_provider=bedrock)
+    aws_region: str = "us-east-1"
+
+    # Azure OpenAI (used when embedding_provider=azure)
+    azure_openai_endpoint: str | None = None
+    azure_openai_api_key: str | None = None
+
+    # General
     default_author: str = "unknown"
     rrf_k: int = 60
     max_memory_size: int = 8000
@@ -26,20 +52,6 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False
     jina_api_key: str | None = None
     rerank_model: str = "jina-reranker-v2-base-multilingual"
-
-    # GCP settings (only used when backend=gcp)
-    gcp_project: str | None = None
-    gcp_location: str = "us-central1"
-    cloud_sql_connection: str | None = None
-
-    # AWS settings (only used when backend=aws)
-    aws_region: str = "us-east-1"
-    aws_bedrock_model: str = "amazon.titan-embed-text-v2:0"
-
-    # Azure settings (only used when backend=azure)
-    azure_openai_endpoint: str | None = None
-    azure_openai_api_key: str | None = None
-    azure_openai_deployment: str = "text-embedding-3-small"
 
 
 settings = Settings()

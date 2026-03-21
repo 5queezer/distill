@@ -57,6 +57,7 @@ nav:
     - Neon Backend: how-to/neon-backend.md
     - AWS Backend: how-to/aws-backend.md
     - Azure Backend: how-to/azure-backend.md
+    - Gemini Backend: how-to/gemini-backend.md
   - Reference:
     - MCP Tools: reference/tools.md
     - Configuration: reference/configuration.md

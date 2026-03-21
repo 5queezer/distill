@@ -17,20 +17,8 @@ def _init_store() -> tuple:
 
         identity = resolve_git_identity()
 
-    if settings.backend in ("gcp", "postgres", "aws", "azure"):
+    if settings.backend == "postgres":
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
-
-        if settings.backend == "gcp" and not settings.gcp_project:
-            raise RuntimeError("GCP_PROJECT is required when BACKEND=gcp")
-        if settings.backend == "azure":
-            if not settings.azure_openai_endpoint:
-                raise RuntimeError(
-                    "AZURE_OPENAI_ENDPOINT is required when BACKEND=azure"
-                )
-            if not settings.azure_openai_api_key:
-                raise RuntimeError(
-                    "AZURE_OPENAI_API_KEY is required when BACKEND=azure"
-                )
 
         store = PostgresStore(dsn=settings.database_url, identity=identity)
         return store, True, identity
@@ -45,7 +33,6 @@ def _run_server() -> None:
     import asyncio
     from pathlib import Path
 
-    from distill_mcp.adapters.distiller.ollama_distill import OllamaDistiller
     from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
     from distill_mcp.domain.services import MemoryService
     from distill_mcp.server import mcp, set_service
@@ -57,37 +44,88 @@ def _run_server() -> None:
     else:
         store.initialize()
 
-    if settings.backend == "gcp":
+    # Provider defaults — used when EMBEDDING_MODEL / LLM_MODEL not set
+    _embedding_defaults = {
+        "ollama": "nomic-embed-text",
+        "gemini": "text-embedding-004",
+        "vertex": "text-embedding-005",
+        "bedrock": "amazon.titan-embed-text-v2:0",
+        "azure": "text-embedding-3-small",
+    }
+    _llm_defaults = {
+        "ollama": "gemma3:4b",
+        "gemini": "gemini-2.0-flash",
+    }
+
+    ep = settings.embedding_provider
+    dp = settings.distiller_provider
+    embedding_model = settings.embedding_model or _embedding_defaults.get(
+        ep, "nomic-embed-text"
+    )
+    llm_model = settings.llm_model or _llm_defaults.get(dp, "gemma3:4b")
+
+    # Embedding provider
+    if ep == "gemini":
+        from distill_mcp.adapters.embeddings.gemini_embed import GeminiEmbedder
+
+        if not settings.gemini_api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini"
+            )
+        embedder = GeminiEmbedder(
+            api_key=settings.gemini_api_key,
+            model=embedding_model,
+        )
+    elif ep == "vertex":
         from distill_mcp.adapters.embeddings.vertex_embed import VertexEmbedder
 
+        if not settings.gcp_project:
+            raise RuntimeError("GCP_PROJECT is required when EMBEDDING_PROVIDER=vertex")
         embedder = VertexEmbedder(
-            project=settings.gcp_project or "",
+            project=settings.gcp_project,
             location=settings.gcp_location,
         )
-    elif settings.backend == "aws":
+    elif ep == "bedrock":
         from distill_mcp.adapters.embeddings.bedrock_embed import BedrockEmbedder
 
         embedder = BedrockEmbedder(
             region=settings.aws_region,
-            model=settings.aws_bedrock_model,
+            model=embedding_model,
         )
-    elif settings.backend == "azure":
+    elif ep == "azure":
         from distill_mcp.adapters.embeddings.azure_embed import AzureOpenAIEmbedder
 
+        if not settings.azure_openai_endpoint or not settings.azure_openai_api_key:
+            raise RuntimeError(
+                "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are required "
+                "when EMBEDDING_PROVIDER=azure"
+            )
         embedder = AzureOpenAIEmbedder(
-            endpoint=settings.azure_openai_endpoint or "",
-            api_key=settings.azure_openai_api_key or "",
-            deployment=settings.azure_openai_deployment,
+            endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key,
+            deployment=embedding_model,
         )
     else:
         from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
 
-        embedder = OllamaEmbedder(
-            host=settings.ollama_host, model=settings.embedding_model
-        )
+        embedder = OllamaEmbedder(host=settings.ollama_host, model=embedding_model)
 
-    # Distiller stays local Ollama regardless of backend (privacy constraint)
-    distiller = OllamaDistiller(host=settings.ollama_host, model=settings.llm_model)
+    # Distillation provider
+    if dp == "gemini":
+        from distill_mcp.adapters.distiller.gemini_distill import GeminiDistiller
+
+        if not settings.gemini_api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is required when DISTILLER_PROVIDER=gemini"
+            )
+        distiller = GeminiDistiller(
+            api_key=settings.gemini_api_key,
+            model=llm_model,
+        )
+    else:
+        from distill_mcp.adapters.distiller.ollama_distill import OllamaDistiller
+
+        distiller = OllamaDistiller(host=settings.ollama_host, model=llm_model)
 
     private_dir = Path(settings.data_dir).expanduser() / "private"
 

@@ -2,11 +2,11 @@
 
 ## What this is
 
-An MCP server that gives Claude Code access to a shared team knowledge base. Raw developer input is distilled into anonymous factual knowledge by a local LLM (Ollama) before anything leaves the device.
+An MCP server that gives Claude Code access to a shared team knowledge base. Raw developer input is distilled into anonymous factual knowledge by an LLM before being stored.
 
 ## Core principle
 
-**The local LLM is the privacy component, not an optional feature.** Raw text → Ollama (local) → distilled fact → team DB. The raw text never crosses a network boundary.
+**By default, the local LLM is the privacy component.** Raw text → Ollama (local) → distilled fact → team DB. Three independent axes: `BACKEND` (storage), `EMBEDDING_PROVIDER`, `DISTILLER_PROVIDER`. Setting `DISTILLER_PROVIDER=gemini` sends raw text to Google instead of keeping it local.
 
 ## Architecture (Uncle Bob / Clean Architecture)
 
@@ -25,9 +25,11 @@ src/distill_mcp/
 │   │   └── postgres_store.py  # StoragePort → asyncpg + pgvector + tsvector
 │   ├── embeddings/
 │   │   ├── ollama_embed.py    # EmbeddingPort → local Ollama
-│   │   └── vertex_embed.py    # EmbeddingPort → Vertex AI
+│   │   ├── vertex_embed.py    # EmbeddingPort → Vertex AI
+│   │   └── gemini_embed.py    # EmbeddingPort → Gemini API
 │   └── distiller/
-│       └── ollama_distill.py  # DistillerPort → local Ollama (always local)
+│       ├── ollama_distill.py  # DistillerPort → local Ollama
+│       └── gemini_distill.py  # DistillerPort → Gemini API
 │
 ├── server.py            # FastMCP tool definitions — thin adapter calling services
 ├── config.py            # pydantic-settings, env var loading
@@ -75,7 +77,7 @@ Every code change follows this sequence. Do not skip steps.
 
 ## What NOT to do
 
-- Never send raw developer input to any cloud API
+- Never send raw developer input to a cloud API unless the user opted in via `DISTILLER_PROVIDER=gemini`
 - Never print to stdout (breaks MCP stdio protocol)
 - Never hardcode API keys
 - Never store author names unless developer opted in via AUTHOR_MODE
