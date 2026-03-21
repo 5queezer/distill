@@ -153,6 +153,24 @@ Meanwhile, a pattern like "All API handlers validate input with Pydantic" stays 
 
 The math behind this is a **Weibull survival function**: `S(t) = exp(-(t/λ)^k)`, where λ is the scale (how many days until significant decay) and k is the shape (how the curve bends). You don't need to know the formula — just pick the right type.
 
+## Memory levels
+
+Each memory has a **level** derived from its type. Levels group types by how broadly the knowledge applies:
+
+| Level | Types | What it means |
+|-------|-------|---------------|
+| `short-term` | `context` | Ephemeral, situational — relevant right now |
+| `long-term` | `decision`, `pattern`, `failure`, `dependency` | Durable project knowledge |
+| `shared` | *(multi-repo memories)* | Knowledge that spans multiple repositories |
+
+Levels affect search scoring through multipliers applied during ranking:
+
+- **Short-term:** ×0.8 — slightly deprioritized since it's transient
+- **Long-term:** ×1.0 — baseline weight
+- **Shared:** ×1.2 — boosted because cross-repo knowledge is harder to rediscover
+
+You don't set the level directly. It's derived from the memory type and repo scope.
+
 ## How search works
 
 When Claude calls `search_memory`, a hybrid search pipeline runs:
@@ -250,6 +268,35 @@ This threshold is deliberately high. Two memories about the same topic but with 
 
 The dedup check runs at **confirmation time**, not at preview time. This means if you submit two identical memories within the preview window, the first one to be confirmed wins and the second gets a duplicate rejection.
 
+## Contradiction detection
+
+When `remember()` is called, the system doesn't just check for exact duplicates — it also looks for **related memories** that might contradict the new one.
+
+After distillation, the system searches for existing memories with cosine similarity > 0.80 (well below the 0.95 dedup threshold). These are returned in the preview response as `related_memories`:
+
+```json
+{
+  "status": "preview",
+  "pending_id": "a1b2c3d4...",
+  "distilled": "Redis chosen for session storage. Reason: need TTL support.",
+  "related_memories": [
+    {
+      "id": "xyz789",
+      "snippet": "Memcached chosen for session storage. Reason: simpler operational model.",
+      "similarity": 0.88
+    }
+  ]
+}
+```
+
+The system doesn't automatically resolve contradictions — that's a human judgment call. When you review the preview, you decide whether the new memory supersedes an existing one. If it does, pass the superseded IDs during confirmation:
+
+```
+confirm_memory(id="a1b2c3d4...", supersedes=["xyz789"])
+```
+
+This soft-deletes the old memory and records the supersession chain, keeping the knowledge base consistent without silent data loss.
+
 ## Updating memories
 
 `update_memory` doesn't edit in place. It creates a **new memory** and soft-deletes the old one:
@@ -267,6 +314,27 @@ The old memory stops appearing in search results, but the chain of supersession 
 `forget` is a soft delete — it sets `deleted_at` on the memory, which excludes it from all search results. The data isn't physically removed from the database.
 
 When `agent_id` is provided, forget only works if the memory belongs to that agent. This prevents one agent from accidentally deleting another agent's knowledge.
+
+## Stale memory detection
+
+The `list_stale` tool identifies memories that have outlived their usefulness. It combines two signals:
+
+- **Weibull survival score < 0.1** — the memory has decayed past its type-appropriate lifespan
+- **Access count < 2** — nobody is finding it useful in search results
+
+Both conditions must be true. A frequently accessed old memory isn't stale — it's still providing value. A rarely accessed recent memory isn't stale either — it hasn't had time to prove itself.
+
+The staleness thresholds are type-aware because each type has a different natural lifespan:
+
+| Type | Approximate stale age |
+|------|----------------------|
+| `context` | ~15 days |
+| `decision` | ~30 days |
+| `failure` | ~60 days |
+| `pattern` | Several months |
+| `dependency` | Several months |
+
+`list_stale` returns candidates for review — it doesn't delete anything automatically. You decide whether to `forget` them or leave them in place.
 
 ## Multi-agent support
 
