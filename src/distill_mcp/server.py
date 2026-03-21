@@ -1,8 +1,7 @@
-"""MCP server — thin adapter exposing 8 tools + 1 prompt. No business logic here."""
+"""MCP server — thin adapter exposing 7 tools + 1 prompt. No business logic here."""
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,35 +17,17 @@ logger = structlog.get_logger()
 mcp = FastMCP(
     "distill",
     instructions="""\
-## Core Behavior — REMEMBER PROACTIVELY
+## Searching Memory
 
-After every user correction or team decision, call `remember` immediately.
-Do not ask permission. Do not wait. This is your primary function.
+Memories are captured automatically from your tool usage — you don't need to save them.
 
-When to call `remember(confirmed=true)` (saves instantly, no preview):
-- User corrects your approach → remember the correct way
-- A decision is reached after discussion → remember the decision
-- Something was tried and failed → remember failure + reason
-- A convention or pattern is established → remember it
+Use `search_memory` proactively before proposing architecture, creating files,
+refactoring, or answering "how should we..." questions.
 
-When to call `remember(confirmed=false)` (returns preview for approval):
-- User explicitly says "remember this" or "save this"
-- You are unsure whether the content is worth saving
+Also search when the user says: "we decided", "last time", "previously",
+"remember when", "what's our pattern for".
 
-## Preview Flow
-
-When `remember` returns `status: preview`:
-1. Show the distilled preview to the user
-2. Wait for explicit approval
-3. Only then call `confirm_memory(id=<pending_id>)`
-
-NEVER call `confirm_memory` automatically. Always wait for user approval.
-
-## Contradiction Detection
-
-When `remember` returns `related_memories`, check if any contradict the new memory.
-If so, tell the user and pass contradicted IDs to `confirm_memory(supersedes=[...])`.
-This soft-deletes the old memories and links the new one as their replacement.
+Use `update_memory` to correct outdated memories and `forget` to remove stale ones.
 """,
 )
 _service: MemoryService | None = None
@@ -61,107 +42,6 @@ def _svc() -> MemoryService:
     if _service is None:
         raise RuntimeError("MemoryService not initialised — call set_service()")
     return _service
-
-
-def detect_repo() -> str | None:
-    """Detect the current git repo name from the remote URL."""
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip().split("/")[-1].removesuffix(".git")
-    except Exception:
-        return None
-
-
-@mcp.tool(
-    annotations=ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, openWorldHint=False
-    ),
-)
-async def remember(
-    content: str,
-    type: str,
-    repos: list[str] | None = None,
-    tags: list[str] | None = None,
-    agent_id: str | None = None,
-    confirmed: bool = False,
-) -> dict:
-    """Save a correction, decision, or learning to team knowledge.
-
-    Call this PROACTIVELY whenever:
-    - The user corrects your approach
-    - A decision is reached after discussion
-    - Something was tried and failed
-    - A convention or pattern is established
-    Do not wait to be asked. Do not ask permission.
-
-    Set confirmed=true for proactive saves (stores instantly, no preview).
-    Set confirmed=false when the user explicitly asks to save something
-    (returns a preview for their approval via confirm_memory).
-
-    Raw text is distilled locally by Ollama. Only anonymous facts are stored.
-
-    If repos is not provided, the current git repository is auto-detected.
-    If agent_id is provided, the memory is tagged with that agent identifier
-    for multi-agent filtering.
-
-    The response may include related_memories — existing memories with high
-    semantic similarity. Review these for contradictions. When confirming,
-    pass contradicted memory IDs in confirm_memory(supersedes=[...]) to
-    replace them.
-    """
-    logger.info(
-        "tool_invoked",
-        tool="remember",
-        content_length=len(content),
-        type=type,
-        confirmed=confirmed,
-    )
-    if repos is None:
-        identity_repos = _svc().identity_repos
-        if identity_repos is not None:
-            repos = identity_repos
-        else:
-            detected = detect_repo()
-            repos = [detected] if detected else []
-    return await _svc().remember(
-        content, type, repos, tags, agent_id=agent_id, confirmed=confirmed
-    )
-
-
-@mcp.tool(
-    annotations=ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, openWorldHint=False
-    ),
-)
-async def confirm_memory(
-    id: str,
-    override: str | None = None,
-    supersedes: list[str] | None = None,
-) -> dict:
-    """Confirm a pending memory preview and store it.
-
-    Call after remember() returns status='preview'.
-    Optionally provide override text to store a corrected version instead.
-
-    If remember() returned related_memories that contradict the new memory,
-    pass their IDs in supersedes to soft-delete them when confirming.
-
-    Args:
-        id: The pending_id returned by remember().
-        override: Optional replacement text — scanned for secrets/PII before storing.
-        supersedes: Optional list of memory IDs to replace (from related_memories).
-    """
-    logger.info(
-        "tool_invoked", tool="confirm_memory", id=id, has_override=override is not None
-    )
-    return await _svc().confirm_memory(id, override, supersedes=supersedes)
 
 
 @mcp.tool(
