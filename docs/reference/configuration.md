@@ -10,7 +10,7 @@ All settings are controlled via environment variables (or a `.env` file). Defaul
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BACKEND` | `local` | Backend type: `local` or `gcp` |
+| `BACKEND` | `local` | Backend type: `local`, `gcp`, `postgres`, `aws`, `azure` |
 | `DATA_DIR` | `~/.team-memory` | Local data directory (SQLite, LanceDB, private store) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
@@ -65,14 +65,33 @@ Used when `BACKEND=gcp`. Works with any PostgreSQL provider that supports pgvect
 | `GCP_LOCATION` | `us-central1` | GCP region for Vertex AI |
 | `CLOUD_SQL_CONNECTION` | — | Cloud SQL instance connection name |
 
+## AWS settings
+
+Used when `BACKEND=aws`. Uses Amazon Bedrock for embeddings.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
+| `AWS_BEDROCK_MODEL` | `amazon.titan-embed-text-v2:0` | Bedrock embedding model |
+
+## Azure settings
+
+Used when `BACKEND=azure`. Uses Azure OpenAI for embeddings.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_OPENAI_ENDPOINT` | — | Azure OpenAI endpoint URL (required when `BACKEND=azure`) |
+| `AZURE_OPENAI_API_KEY` | — | Azure OpenAI API key (required when `BACKEND=azure`) |
+| `AZURE_OPENAI_DEPLOYMENT` | `text-embedding-3-small` | Azure OpenAI deployment name |
+
 ## Port interfaces
 
 Distill uses Clean Architecture ports. Each setting selects an adapter:
 
-| Port | `local` adapter | `gcp` adapter |
-|------|----------------|---------------|
-| `StoragePort` | SQLite + FTS5 + LanceDB | Cloud SQL + pgvector + tsvector |
-| `EmbeddingPort` | Ollama (`nomic-embed-text`) | Vertex AI (`text-embedding-005`) |
-| `DistillerPort` | Ollama (`gemma3:4b`) | Ollama (`gemma3:4b`) — always local |
-| `ScannerPort` | gitleaks-based secret detection | gitleaks-based secret detection |
-| `RerankerPort` | — (not used) | Jina Reranker API (opt-in) |
+| Port | `local` adapter | `gcp` adapter | `aws` adapter | `azure` adapter |
+|------|----------------|---------------|---------------|-----------------|
+| `StoragePort` | SQLite + FTS5 + LanceDB | Cloud SQL + pgvector + tsvector | Cloud SQL + pgvector + tsvector | Cloud SQL + pgvector + tsvector |
+| `EmbeddingPort` | Ollama (`nomic-embed-text`) | Vertex AI (`text-embedding-005`) | Bedrock (`amazon.titan-embed-text-v2:0`) | Azure OpenAI (`text-embedding-3-small`) |
+| `DistillerPort` | Ollama (`gemma3:4b`) | Ollama (`gemma3:4b`) — always local | Ollama (`gemma3:4b`) — always local | Ollama (`gemma3:4b`) — always local |
+| `ScannerPort` | gitleaks-based secret detection | gitleaks-based secret detection | gitleaks-based secret detection | gitleaks-based secret detection |
+| `RerankerPort` | — (not used) | Jina Reranker API (opt-in) | — (not used) | — (not used) |

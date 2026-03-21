@@ -47,6 +47,39 @@ Every "memory MCP" stores your raw text in a database. Distill doesn't. The loca
 | Where is my raw text? | `~/.distill/private/` on your machine. Delete anytime. |
 | What if distillation leaks a name? | You review every output before it's saved. The scanner also checks for secrets. |
 
+## The scanner: secrets and PII
+
+The scanner runs at two points in the pipeline: **before** distillation (to protect the local LLM input) and **after** distillation (to catch anything the model reproduced). It detects two categories of sensitive content:
+
+### Secrets
+
+API keys, tokens, passwords, connection strings — anything that looks like a credential. These are redacted with `[REDACTED]` markers before the text proceeds.
+
+### PII
+
+In addition to secrets, the scanner detects personally identifiable information:
+
+| PII type | Examples | Handling |
+|----------|----------|----------|
+| Email addresses | `user@company.com` | Redacted |
+| Phone numbers | `+1-555-0123`, `(555) 867-5309` | Redacted |
+| URLs and domains | `internal.corp.net`, `192.168.1.1/admin` | Redacted (with allowlist) |
+| IP addresses | `10.0.0.5`, `2001:db8::1` | Redacted |
+| SSNs | `123-45-6789` | Redacted |
+| Credit card numbers | `4111-1111-1111-1111` | Redacted |
+
+**URL allowlist:** Public sites like `github.com`, `pypi.org`, and `stackoverflow.com` are not redacted — these appear frequently in technical knowledge and aren't personally identifying.
+
+### Scanner coverage
+
+The scanner runs on all paths that write to the team database:
+
+- `remember()` — scans raw input before distillation, scans distilled output after
+- `confirm_memory()` with `override` — scans the user-provided override text
+- `update_memory()` — scans the new input through the full pipeline
+
+Previously, `confirm_memory` overrides and `update_memory` bypassed the scanner. This has been fixed — all write paths now pass through PII and secret scanning.
+
 ## Author modes
 
 | Mode | Behavior |

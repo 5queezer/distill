@@ -29,7 +29,7 @@ graph TB
         SQL["sqlite_store.py / postgres_store.py"]
         EMB["ollama_embed.py / vertex_embed.py"]
         DST["ollama_distill.py"]
-        SCN["secret_scanner.py"]
+        SCN["secret_scanner.py (secrets + PII)"]
         RRK["jina_rerank.py (opt-in)"]
     end
 
@@ -72,7 +72,7 @@ src/distill_mcp/
 │   ├── distiller/
 │   │   └── ollama_distill.py  # DistillerPort → local Ollama (always local)
 │   ├── scanner/
-│   │   └── secret_scanner.py  # ScannerPort → gitleaks-based redaction
+│   │   └── secret_scanner.py  # ScannerPort → secrets + PII redaction
 │   └── reranker/
 │       └── jina_rerank.py     # RerankerPort → Jina Reranker API (opt-in)
 │
@@ -93,6 +93,8 @@ This means you can swap SQLite for PostgreSQL, or Ollama embeddings for Vertex A
 |---------|---------|---------|------------|--------------|------|
 | `local` | SQLite + FTS5 | LanceDB | Ollama | Ollama | $0 |
 | `gcp` | Cloud SQL PostgreSQL | pgvector | Vertex AI | Ollama (local) | ~$11/mo |
+| `aws` | RDS PostgreSQL | pgvector | Bedrock | Ollama (local) | ~$15/mo |
+| `azure` | Azure Database for PostgreSQL | pgvector | Azure OpenAI | Ollama (local) | ~$14/mo |
 
 Distillation is **always local** regardless of backend — this is the privacy guarantee.
 
@@ -113,10 +115,11 @@ Distillation is **always local** regardless of backend — this is the privacy g
 2. Full-text search runs in parallel with vector similarity search
 3. Results are merged using Reciprocal Rank Fusion (k=60)
 4. Optional cross-encoder reranking via `RerankerPort` (Jina API, GCP-only)
-5. Weibull time-decay boost — type-aware recency scoring (decisions decay fast, patterns persist)
-6. Access-frequency boost — frequently accessed memories rank higher
-7. Returns compact index (~30 tokens/result) for progressive disclosure
-8. Client fetches full content with `get_memories` for relevant results only
+5. Level-aware boost — multipliers based on memory level: short-term ×0.8, long-term ×1.0, shared ×1.2
+6. Weibull time-decay boost — type-aware recency scoring (decisions decay fast, patterns persist)
+7. Access-frequency boost — frequently accessed memories rank higher
+8. Returns compact index (~30 tokens/result) for progressive disclosure
+9. Client fetches full content with `get_memories` for relevant results only
 
 ### Weibull time-decay
 

@@ -4,7 +4,7 @@ title: MCP Tools
 
 # MCP Tools Reference
 
-Distill exposes 8 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
+Distill exposes 9 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
 
 ## remember
 
@@ -18,7 +18,7 @@ Distill raw input into anonymous team knowledge.
 | `tags` | list[string] | no | Free-form tags for filtering |
 | `agent_id` | string | no | Agent identifier for multi-agent filtering |
 
-**Returns:** A preview with `pending_id` (when `PREVIEW_ENABLED=true`, the default) or the saved memory directly.
+**Returns:** A preview with `pending_id` (when `PREVIEW_ENABLED=true`, the default) or the saved memory directly. The response includes a `level` field (`short-term`, `long-term`, or `shared`). When similar memories exist (>0.80 cosine similarity), the response also includes a `related_memories` list. Each entry contains `id`, `similarity`, `type`, `snippet`, and `created_at`.
 
 **Privacy:** The raw `content` is sent to local Ollama only. The distilled output is what gets stored.
 
@@ -30,6 +30,9 @@ Confirm a pending preview and store it.
 |-----------|------|----------|-------------|
 | `id` | string | yes | The `pending_id` from `remember` |
 | `override` | string | no | Replacement text (will be re-distilled) |
+| `supersedes` | list[string] | no | Memory IDs to soft-delete when confirming |
+
+**Returns:** The confirmed memory. When `supersedes` is provided, the response includes a `superseded` list of the IDs that were soft-deleted.
 
 ## search_memory
 
@@ -42,7 +45,7 @@ Hybrid search combining full-text (FTS5/tsvector) and vector similarity (LanceDB
 | `repo` | string | no | Filter by repository |
 | `agent_id` | string | no | Filter by agent |
 
-**Returns:** Compact index (~30 tokens/result) with `id`, `type`, `snippet`, `score`, `est_tokens`. Use `get_memories` to fetch full content for relevant results.
+**Returns:** Compact index (~30 tokens/result) with `id`, `type`, `snippet`, `score`, `est_tokens`, `level`. Use `get_memories` to fetch full content for relevant results.
 
 ## get_memories
 
@@ -51,6 +54,8 @@ Fetch full memory details by IDs. Batch multiple IDs in one call.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `ids` | list[string] | yes | Memory IDs to fetch |
+
+**Returns:** Full memory objects including `level` field (`short-term`, `long-term`, or `shared`).
 
 ## get_memory
 
@@ -80,6 +85,19 @@ List recent memories as compact index.
 | `type` | string | no | Filter by memory type |
 | `limit` | int | no | Max results (default: 20, max: 100) |
 | `agent_id` | string | no | Filter by agent |
+
+**Returns:** Compact index including `level` field (`short-term`, `long-term`, or `shared`).
+
+## list_stale
+
+List memories likely stale based on age and access patterns.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repo` | string | no | Filter by repository |
+| `limit` | int | no | Max results (default: 20) |
+
+**Returns:** List of stale memory dicts with `id`, `type`, `snippet`, `age_days`, `access_count`, `survival_score`.
 
 ## forget
 
