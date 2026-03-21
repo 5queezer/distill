@@ -65,6 +65,9 @@ class FakeStorage:
     async def record_access(self, id: str) -> None:
         pass
 
+    async def find_related(self, vec, *, threshold=0.80, top_k=3, repo=None):
+        return []
+
 
 def _memory(
     id: str = "test-id",

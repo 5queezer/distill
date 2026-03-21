@@ -193,6 +193,28 @@ class MemoryService:
             }
         return None
 
+    async def _find_related_info(
+        self, vec: list[float], *, repo: str | None = None
+    ) -> list[dict]:
+        """Find related memories and return compact info for contradiction detection."""
+        pairs = await self._storage.find_related(vec, repo=repo)
+        related: list[dict] = []
+        for mid, sim in pairs:
+            mem = await self._storage.get(mid)
+            if mem is None:
+                continue
+            snippet = mem.content[:120] + ("..." if len(mem.content) > 120 else "")
+            related.append(
+                {
+                    "id": mid,
+                    "similarity": sim,
+                    "type": mem.type,
+                    "snippet": snippet,
+                    "created_at": mem.created_at.isoformat(),
+                }
+            )
+        return related
+
     async def remember(
         self,
         raw_text: str,
@@ -250,6 +272,10 @@ class MemoryService:
         # 2. Embed
         vec = await self._embedder.embed(distilled)
 
+        # 2b. Find related memories for contradiction detection
+        repo_filter = repos[0] if repos else None
+        related = await self._find_related_info(vec, repo=repo_filter)
+
         # Store immediately when preview is disabled or caller confirmed proactively
         if not self._preview_enabled or confirmed:
             # 3. Dedup
@@ -269,12 +295,15 @@ class MemoryService:
                 agent_id=agent_id,
             )
             saved_id = await self._storage.save(memory, vec)
-            return {
+            result: dict = {
                 "status": "saved",
                 "id": saved_id,
                 "distilled": distilled,
                 "redacted_count": len(pre_findings),
             }
+            if related:
+                result["related_memories"] = related
+            return result
 
         # Preview enabled: save to pending, write raw text to private file
         pending_id = uuid4().hex
@@ -299,16 +328,22 @@ class MemoryService:
             private_file=private_file,
             agent_id=agent_id,
         )
-        return {
+        result = {
             "status": "preview",
             "pending_id": pending_id,
             "distilled": distilled,
             "expires_in_seconds": self._preview_ttl_seconds,
             "redacted_count": len(pre_findings),
         }
+        if related:
+            result["related_memories"] = related
+        return result
 
     async def confirm_memory(
-        self, pending_id: str, override: str | None = None
+        self,
+        pending_id: str,
+        override: str | None = None,
+        supersedes: list[str] | None = None,
     ) -> dict:
         from distill_mcp.domain.models import Memory
 
@@ -368,8 +403,20 @@ class MemoryService:
             self._pending[pending_id] = entry
             raise
 
+        # Supersede related memories if caller chose to replace them
+        superseded_ids: list[str] = []
+        if supersedes:
+            for old_id in supersedes:
+                old_mem = await self._storage.get(old_id)
+                if old_mem is not None:
+                    await self._storage.delete(old_id)
+                    superseded_ids.append(old_id)
+
         self._cleanup_private_file(entry)
-        return {"status": "saved", "id": saved_id, "distilled": final_text}
+        result: dict = {"status": "saved", "id": saved_id, "distilled": final_text}
+        if superseded_ids:
+            result["superseded"] = superseded_ids
+        return result
 
     @staticmethod
     def _weibull_recency(age_days: int, memory_type: str) -> float:

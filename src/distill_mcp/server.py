@@ -41,6 +41,12 @@ When `remember` returns `status: preview`:
 3. Only then call `confirm_memory(id=<pending_id>)`
 
 NEVER call `confirm_memory` automatically. Always wait for user approval.
+
+## Contradiction Detection
+
+When `remember` returns `related_memories`, check if any contradict the new memory.
+If so, tell the user and pass contradicted IDs to `confirm_memory(supersedes=[...])`.
+This soft-deletes the old memories and links the new one as their replacement.
 """,
 )
 _service: MemoryService | None = None
@@ -104,6 +110,11 @@ async def remember(
     If repos is not provided, the current git repository is auto-detected.
     If agent_id is provided, the memory is tagged with that agent identifier
     for multi-agent filtering.
+
+    The response may include related_memories — existing memories with high
+    semantic similarity. Review these for contradictions. When confirming,
+    pass contradicted memory IDs in confirm_memory(supersedes=[...]) to
+    replace them.
     """
     logger.info(
         "tool_invoked",
@@ -129,20 +140,28 @@ async def remember(
         readOnlyHint=False, destructiveHint=False, openWorldHint=False
     ),
 )
-async def confirm_memory(id: str, override: str | None = None) -> dict:
+async def confirm_memory(
+    id: str,
+    override: str | None = None,
+    supersedes: list[str] | None = None,
+) -> dict:
     """Confirm a pending memory preview and store it.
 
     Call after remember() returns status='preview'.
     Optionally provide override text to store a corrected version instead.
 
+    If remember() returned related_memories that contradict the new memory,
+    pass their IDs in supersedes to soft-delete them when confirming.
+
     Args:
         id: The pending_id returned by remember().
-        override: Optional replacement text — will be re-distilled and stored.
+        override: Optional replacement text — scanned for secrets/PII before storing.
+        supersedes: Optional list of memory IDs to replace (from related_memories).
     """
     logger.info(
         "tool_invoked", tool="confirm_memory", id=id, has_override=override is not None
     )
-    return await _svc().confirm_memory(id, override)
+    return await _svc().confirm_memory(id, override, supersedes=supersedes)
 
 
 @mcp.tool(
