@@ -169,7 +169,8 @@ class TestAccessRecording:
     async def test_filtered_results_not_recorded(self) -> None:
         """Results dropped by min-score filter should not get access recorded."""
         above = SearchResult(memory=_memory(access_count=0), score=0.6)
-        below = SearchResult(memory=_memory(access_count=0), score=0.01)
+        # Old memory with low score: after recency boost ≈ 0.85*0.01 = 0.0085 < threshold
+        below = SearchResult(memory=_memory(access_count=0, days_old=365), score=0.01)
         svc, storage = _service([above, below])
         await svc.search("query")
         await asyncio.sleep(0.01)
