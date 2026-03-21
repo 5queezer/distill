@@ -330,9 +330,15 @@ class MemoryService:
             return {"status": "expired"}
 
         # Determine final text and vector.
-        # override is stored as-is (user-edited text bypasses distillation by design).
         try:
             if override is not None:
+                # Block override if it contains secrets or PII — user must fix it
+                if self._scanner is not None and self._scanner.has_secrets(override):
+                    self._pending[pending_id] = entry
+                    return {
+                        "status": "blocked",
+                        "reason": "Override text contained secrets or PII. Edit and retry.",
+                    }
                 final_text = override
                 vec = await self._embedder.embed(final_text)
             else:
@@ -446,10 +452,21 @@ class MemoryService:
         if not old:
             return {"status": "not_found"}
 
+        # Pre-distillation secret/PII scan — redact before Ollama sees it
+        if self._scanner is not None:
+            raw_text, _ = self._scanner.redact(raw_text)
+
         if self._distill_enabled:
             distilled = await self._distiller.distill(raw_text)
         else:
             distilled = raw_text
+
+        # Post-distillation secret scan — hard block if LLM leaked secrets
+        if self._scanner is not None and self._scanner.has_secrets(distilled):
+            return {
+                "status": "blocked",
+                "reason": "Distilled output contained potential secrets. Nothing was saved.",
+            }
 
         vec = await self._embedder.embed(distilled)
 
