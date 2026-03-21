@@ -4,35 +4,9 @@ title: MCP Tools
 
 # MCP Tools Reference
 
-Distill exposes 9 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
+Distill exposes 7 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
 
-## remember
-
-Distill raw input into anonymous team knowledge.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `content` | string | yes | Raw text to distill |
-| `type` | string | yes | Memory type (e.g., `decision`, `convention`, `bug`) |
-| `repos` | list[string] | no | Repository tags (auto-detected from git if omitted) |
-| `tags` | list[string] | no | Free-form tags for filtering |
-| `agent_id` | string | no | Agent identifier for multi-agent filtering |
-
-**Returns:** A preview with `pending_id` (when `PREVIEW_ENABLED=true`, the default) or the saved memory directly. The response includes a `level` field (`short-term`, `long-term`, or `shared`). When similar memories exist (>0.80 cosine similarity), the response also includes a `related_memories` list. Each entry contains `id`, `similarity`, `type`, `snippet`, and `created_at`.
-
-**Privacy:** The raw `content` is sent to local Ollama only. The distilled output is what gets stored.
-
-## confirm_memory
-
-Confirm a pending preview and store it.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | string | yes | The `pending_id` from `remember` |
-| `override` | string | no | Replacement text (will be re-distilled) |
-| `supersedes` | list[string] | no | Memory IDs to soft-delete when confirming |
-
-**Returns:** The confirmed memory. When `supersedes` is provided, the response includes a `superseded` list of the IDs that were soft-deleted.
+Memories are captured automatically via the [auto-observe pipeline](../explanation/how-memory-works.md) — there is no explicit "remember" tool. The tools below are for **reading, searching, and managing** existing memories.
 
 ## search_memory
 
