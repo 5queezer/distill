@@ -215,7 +215,7 @@ class TestUpdateMemoryScanning:
     """update_memory must run pre- and post-distillation scanning."""
 
     async def test_update_with_secret_in_input_redacts(self) -> None:
-        svc, storage = _service(scanner=SecretScanner(), preview_enabled=False)
+        svc, _storage = _service(scanner=SecretScanner(), preview_enabled=False)
         result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
         assert result["status"] == "saved"
         mem_id = result["id"]
@@ -240,7 +240,7 @@ class TestUpdateMemoryScanning:
                     return "Distilled fact"
                 return "Token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is used"  # pragma: allowlist secret
 
-        svc, storage = _service(
+        svc, _storage = _service(
             scanner=SecretScanner(),
             distiller=LeakyDistiller(),
             preview_enabled=False,
@@ -253,7 +253,7 @@ class TestUpdateMemoryScanning:
         assert result["status"] == "blocked"
 
     async def test_update_with_email_in_input_redacts(self) -> None:
-        svc, storage = _service(scanner=SecretScanner(), preview_enabled=False)
+        svc, _storage = _service(scanner=SecretScanner(), preview_enabled=False)
         result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
         assert result["status"] == "saved"
 
