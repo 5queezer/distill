@@ -17,11 +17,20 @@ def _init_store() -> tuple:
 
         identity = resolve_git_identity()
 
-    if settings.backend in ("gcp", "postgres"):
+    if settings.backend in ("gcp", "postgres", "aws", "azure"):
         from distill_mcp.adapters.storage.postgres_store import PostgresStore
 
         if settings.backend == "gcp" and not settings.gcp_project:
             raise RuntimeError("GCP_PROJECT is required when BACKEND=gcp")
+        if settings.backend == "azure":
+            if not settings.azure_openai_endpoint:
+                raise RuntimeError(
+                    "AZURE_OPENAI_ENDPOINT is required when BACKEND=azure"
+                )
+            if not settings.azure_openai_api_key:
+                raise RuntimeError(
+                    "AZURE_OPENAI_API_KEY is required when BACKEND=azure"
+                )
 
         store = PostgresStore(dsn=settings.database_url, identity=identity)
         return store, True, identity
@@ -54,6 +63,21 @@ def _run_server() -> None:
         embedder = VertexEmbedder(
             project=settings.gcp_project or "",
             location=settings.gcp_location,
+        )
+    elif settings.backend == "aws":
+        from distill_mcp.adapters.embeddings.bedrock_embed import BedrockEmbedder
+
+        embedder = BedrockEmbedder(
+            region=settings.aws_region,
+            model=settings.aws_bedrock_model,
+        )
+    elif settings.backend == "azure":
+        from distill_mcp.adapters.embeddings.azure_embed import AzureOpenAIEmbedder
+
+        embedder = AzureOpenAIEmbedder(
+            endpoint=settings.azure_openai_endpoint or "",
+            api_key=settings.azure_openai_api_key or "",
+            deployment=settings.azure_openai_deployment,
         )
     else:
         from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder

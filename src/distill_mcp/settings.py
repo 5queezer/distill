@@ -32,5 +32,14 @@ class Settings(BaseSettings):
     gcp_location: str = "us-central1"
     cloud_sql_connection: str | None = None
 
+    # AWS settings (only used when backend=aws)
+    aws_region: str = "us-east-1"
+    aws_bedrock_model: str = "amazon.titan-embed-text-v2:0"
+
+    # Azure settings (only used when backend=azure)
+    azure_openai_endpoint: str | None = None
+    azure_openai_api_key: str | None = None
+    azure_openai_deployment: str = "text-embedding-3-small"
+
 
 settings = Settings()
