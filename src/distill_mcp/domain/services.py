@@ -50,6 +50,13 @@ MIN_SEARCH_SCORE = 0.35
 RECENCY_WEIGHT = 0.15
 ACCESS_BOOST_WEIGHT = 0.1
 
+# Level-aware scoring multipliers
+LEVEL_BOOST: dict[str, float] = {
+    "short-term": 0.8,  # ephemeral context ranks lower
+    "long-term": 1.0,  # baseline for durable knowledge
+    "shared": 1.2,  # cross-repo knowledge ranks higher
+}
+
 # Weibull decay parameters per memory type: (scale λ in days, shape k)
 # S(t) = exp(-(t/λ)^k)  — 1.0 at t=0, decays toward 0
 WEIBULL_PARAMS: dict[str, tuple[float, float]] = {
@@ -81,7 +88,7 @@ class _PendingEntry:
 
 def _to_index(memory: Memory, score: float = 0.0) -> MemoryIndex:
     """Convert a Memory to a compact MemoryIndex for progressive disclosure."""
-    from distill_mcp.domain.models import MemoryIndex
+    from distill_mcp.domain.models import MemoryIndex, derive_level
 
     snippet = memory.content[:80] + ("..." if len(memory.content) > 80 else "")
     return MemoryIndex(
@@ -92,13 +99,14 @@ def _to_index(memory: Memory, score: float = 0.0) -> MemoryIndex:
         score=score,
         created_at=memory.created_at,
         est_tokens=len(memory.content) // 4,
+        level=derive_level(memory.type, memory.repos),
         agent_id=memory.agent_id,
     )
 
 
 def _to_detail(memory: Memory, score: float | None = None) -> MemoryDetail:
     """Convert a Memory to a full MemoryDetail."""
-    from distill_mcp.domain.models import MemoryDetail
+    from distill_mcp.domain.models import MemoryDetail, derive_level
 
     return MemoryDetail(
         id=memory.id,
@@ -109,6 +117,7 @@ def _to_detail(memory: Memory, score: float | None = None) -> MemoryDetail:
         score=score,
         created_at=memory.created_at,
         author=memory.author,
+        level=derive_level(memory.type, memory.repos),
         agent_id=memory.agent_id,
         est_tokens=len(memory.content) // 4,
     )
@@ -464,6 +473,13 @@ class MemoryService:
         for r in results:
             access_boost = math.log(r.memory.access_count + 1) * ACCESS_BOOST_WEIGHT
             r.score *= 1.0 + access_boost
+
+        # Level-aware boost — shared knowledge ranks higher, ephemeral lower
+        from distill_mcp.domain.models import derive_level
+
+        for r in results:
+            level = derive_level(r.memory.type, r.memory.repos)
+            r.score *= LEVEL_BOOST.get(level, 1.0)
 
         results = [r for r in results if r.score >= MIN_SEARCH_SCORE]
         results.sort(key=lambda r: r.score, reverse=True)
