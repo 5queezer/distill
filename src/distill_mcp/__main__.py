@@ -32,6 +32,36 @@ def _run_server() -> None:
             project=settings.gcp_project,
             location=settings.gcp_location,
         )
+    elif settings.backend == "aws":
+        import asyncio
+
+        from distill_mcp.adapters.embeddings.bedrock_embed import BedrockEmbedder
+        from distill_mcp.adapters.storage.postgres_store import PostgresStore
+
+        store = PostgresStore(dsn=settings.database_url, identity=identity)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
+        embedder = BedrockEmbedder(
+            region=settings.aws_region,
+            model=settings.aws_bedrock_model,
+        )
+    elif settings.backend == "azure":
+        import asyncio
+
+        from distill_mcp.adapters.embeddings.azure_embed import AzureOpenAIEmbedder
+        from distill_mcp.adapters.storage.postgres_store import PostgresStore
+
+        if not settings.azure_openai_endpoint:
+            raise RuntimeError("AZURE_OPENAI_ENDPOINT is required when BACKEND=azure")
+        if not settings.azure_openai_api_key:
+            raise RuntimeError("AZURE_OPENAI_API_KEY is required when BACKEND=azure")
+
+        store = PostgresStore(dsn=settings.database_url, identity=identity)
+        asyncio.get_event_loop().run_until_complete(store.initialize())
+        embedder = AzureOpenAIEmbedder(
+            endpoint=settings.azure_openai_endpoint,
+            api_key=settings.azure_openai_api_key,
+            deployment=settings.azure_openai_deployment,
+        )
     elif settings.backend == "postgres":
         import asyncio
 
