@@ -145,7 +145,7 @@ class TestRelatedMemoriesSurfaced:
         assert "related_memories" not in result
 
     async def test_related_returned_when_similar_exists(self) -> None:
-        svc, storage = _service(preview_enabled=False)
+        svc, _storage = _service(preview_enabled=False)
 
         # Store a first memory about PostgreSQL
         first = await svc.remember(
