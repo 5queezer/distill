@@ -21,6 +21,10 @@ class SearchResult:
     score: float          # RRF hybrid score
 ```
 
+## Services (services.py)
+
+Use cases: `search`, `get`, `update`, `list_recent`, `forget`. Memory ingestion happens outside the domain layer via the hooks → ingest.py → worker.py pipeline.
+
 ## Ports (ports.py)
 
 ```python

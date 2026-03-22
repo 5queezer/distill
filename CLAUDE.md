@@ -17,7 +17,7 @@ src/distill_mcp/
 ├── domain/              # Inner ring: pure business logic, no dependencies
 │   ├── models.py        # Memory, DistilledMemory, SearchResult (dataclasses/Pydantic)
 │   ├── ports.py         # Abstract interfaces (StoragePort, EmbeddingPort, DistillerPort)
-│   └── services.py      # Use cases: remember, search, update, forget (depends only on ports)
+│   └── services.py      # Use cases: search, get, update, list_recent, forget (depends only on ports)
 │
 ├── adapters/            # Outer ring: implementations of ports
 │   ├── storage/
@@ -32,6 +32,8 @@ src/distill_mcp/
 │       └── gemini_distill.py  # DistillerPort → Gemini API
 │
 ├── server.py            # FastMCP tool definitions — thin adapter calling services
+├── ingest.py            # Auto-observe: receives raw hook events, queues for worker
+├── worker.py            # Background worker: distills and stores queued events
 ├── config.py            # pydantic-settings, env var loading
 ├── dedup.py             # Cosine similarity > 0.95 check
 ├── private_store.py     # Raw text → local JSONL (never synced)
@@ -79,9 +81,9 @@ Every code change follows this sequence. Do not skip steps.
 
 - Never send raw developer input to a cloud API unless the user opted in via `DISTILLER_PROVIDER=gemini`
 - Never print to stdout (breaks MCP stdio protocol)
+- Never print to stdout from ingest.py (same reason — stdio is the MCP transport)
 - Never hardcode API keys
 - Never store author names unless developer opted in via AUTHOR_MODE
-- Never skip dedup check on remember
 - Never import from adapters/ inside domain/ (dependency rule violation)
 - Never put business logic in server.py (it's a thin adapter)
 
