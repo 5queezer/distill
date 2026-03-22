@@ -268,11 +268,39 @@ Since observations are captured automatically, contradiction resolution happens 
 
 The old memory stops appearing in search results, but the chain of supersession is preserved in the database. This means you can always trace how knowledge evolved.
 
+## Lineage tracking
+
+When a memory is updated via `update_memory`, the new memory records a `supersedes` link to the old one. The `get_lineage` tool traces this chain in both directions — predecessors (what this memory replaced) and successors (what replaced this memory) — ordered oldest to newest.
+
+This lets you understand how a decision evolved:
+
+```
+v1: "Redis chosen for caching"
+  └── superseded by v2: "Redis chosen for caching and session storage"
+       └── superseded by v3: "Switched from Redis to Valkey for caching and sessions"
+```
+
+Call `get_lineage(id)` with any memory in the chain to see the full history.
+
+## Temporal search
+
+`search_memory` supports `after` and `before` parameters (ISO 8601 date strings) to restrict results to a specific time window. This is useful for questions like:
+
+- "What decisions did we make last week?" → `after="2026-03-15"`
+- "What did we know before the migration?" → `before="2026-03-01"`
+- "What changed in February?" → `after="2026-02-01"`, `before="2026-03-01"`
+
+Temporal filters are applied after the hybrid search pipeline, so they work with all other search features (FTS, vector similarity, reranking).
+
 ## Forgetting
 
-`forget` is a soft delete — it sets `deleted_at` on the memory, which excludes it from all search results. The data isn't physically removed from the database.
+`forget` is a soft delete — it sets `deleted_at` on the memory, which excludes it from all search results. The data isn't physically removed from the database immediately.
 
 When `agent_id` is provided, forget only works if the memory belongs to that agent. This prevents one agent from accidentally deleting another agent's knowledge.
+
+### Retention purge
+
+Soft-deleted memories are hard-deleted after `RETENTION_DAYS` (default: 90 days). This runs automatically on server startup. Set `RETENTION_DAYS=0` to disable automatic purging and keep soft-deleted memories indefinitely.
 
 ## Stale memory detection
 

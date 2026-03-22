@@ -49,7 +49,7 @@ Every "memory MCP" stores your raw text in a database. Distill doesn't. The LLM 
 | Does Anthropic see my raw input? | No. It goes to the distiller: Ollama (local) or Gemini (Google). |
 | Can my team read what I typed? | No. Only the distilled fact is stored. |
 | Can my manager see who wrote what? | Only if you opt in (`AUTH_ENABLED=true`). Anonymous by default. |
-| Where is my raw text? | `~/.distill/private/` on your machine. Delete anytime. |
+| Where is my raw text? | `~/.team-memory/private/` on your machine. Delete anytime. |
 | What if distillation leaks a name? | The scanner checks all distilled output for PII and secrets before saving. |
 
 ## The scanner: secrets and PII

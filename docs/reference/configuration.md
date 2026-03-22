@@ -20,7 +20,7 @@ All settings are controlled via environment variables (or a `.env` file).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `EMBEDDING_PROVIDER` | `ollama` | Provider: `ollama`, `gemini`, `vertex`, `bedrock`, `azure` |
-| `EMBEDDING_MODEL` | *(per provider)* | Embedding model name. Defaults: ollama=`nomic-embed-text`, gemini=`text-embedding-004`, vertex=`text-embedding-005`, bedrock=`amazon.titan-embed-text-v2:0`, azure=`text-embedding-3-small` |
+| `EMBEDDING_MODEL` | *(per provider)* | Embedding model name. Defaults: ollama=`nomic-embed-text`, gemini=`gemini-embedding-001`, vertex=`text-embedding-005`, bedrock=`amazon.titan-embed-text-v2:0`, azure=`text-embedding-3-small` |
 
 All embeddings must produce **768-dimensional** vectors.
 
@@ -79,7 +79,7 @@ Uses the default AWS credential chain (environment variables, `~/.aws/credential
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DISTILL_INGEST_PORT` | `21746` | Port for the local HTTP `/observe` endpoint |
+| `INGEST_PORT` | `21746` | Port for the local HTTP `/observe` endpoint |
 
 ## Privacy & processing
 
@@ -88,6 +88,7 @@ Uses the default AWS credential chain (environment variables, `~/.aws/credential
 | `DISTILL_ENABLED` | `true` | Enable LLM distillation (disable for testing) |
 | `DEFAULT_AUTHOR` | `unknown` | Default author attribution |
 | `AUTH_ENABLED` | `false` | Enable git-based identity + PostgreSQL RLS |
+| `RETENTION_DAYS` | `90` | Hard-delete soft-deleted memories after this many days (0 to disable) |
 
 ## Search tuning
 
