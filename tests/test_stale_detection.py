@@ -93,7 +93,6 @@ def _service(memories: list[Memory]) -> MemoryService:
         storage=storage,
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
-        preview_enabled=False,
     )
 
 

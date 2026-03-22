@@ -74,17 +74,39 @@ def _service(
     *,
     scanner: SecretScanner | None = None,
     distiller: FakeDistiller | None = None,
-    preview_enabled: bool = True,
 ) -> tuple[MemoryService, FakeStorage]:
     storage = FakeStorage()
     svc = MemoryService(
         storage=storage,
         embedder=FakeEmbedder(),
         distiller=distiller or FakeDistiller(),
-        preview_enabled=preview_enabled,
         scanner=scanner,
     )
     return svc, storage
+
+
+async def _insert(
+    storage: FakeStorage,
+    content: str = "Distilled fact",
+    *,
+    type: str = "decision",
+    repos: list[str] | None = None,
+) -> Memory:
+    """Insert a Memory directly into FakeStorage, bypassing distillation."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    mem = Memory(
+        id=uuid4().hex,
+        content=content,
+        type=type,
+        repos=repos or ["repo"],
+        tags=[],
+        author=None,
+        created_at=datetime.now(UTC),
+    )
+    await storage.save(mem, [0.1] * 768)
+    return mem
 
 
 # ============================================================
@@ -153,63 +175,6 @@ class TestPIIDetection:
 
 
 # ============================================================
-# Issue #53 — confirm_memory override must be scanned
-# ============================================================
-
-
-class TestConfirmMemoryBypass:
-    """Override text in confirm_memory must pass through scanning."""
-
-    async def test_override_with_secret_is_blocked(self) -> None:
-        svc, storage = _service(scanner=SecretScanner())
-        preview = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-        assert preview["status"] == "preview"
-
-        result = await svc.confirm_memory(
-            preview["pending_id"],
-            override="Use token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx in CI",  # pragma: allowlist secret
-        )
-        assert result["status"] == "blocked"
-        assert len(storage.saved) == 0
-
-    async def test_override_with_email_is_blocked(self) -> None:
-        svc, storage = _service(scanner=SecretScanner())
-        preview = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-
-        result = await svc.confirm_memory(
-            preview["pending_id"],
-            override="John's email is john.doe@company.com",
-        )
-        assert result["status"] == "blocked"
-        assert len(storage.saved) == 0
-
-    async def test_override_with_clean_text_saves(self) -> None:
-        svc, storage = _service(scanner=SecretScanner())
-        preview = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-
-        result = await svc.confirm_memory(
-            preview["pending_id"],
-            override="PostgreSQL chosen for pgvector support",
-        )
-        assert result["status"] == "saved"
-        assert len(storage.saved) == 1
-
-    async def test_blocked_override_preserves_pending_entry(self) -> None:
-        """A blocked override should re-insert the pending entry so user can retry."""
-        svc, _ = _service(scanner=SecretScanner())
-        preview = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-        pid = preview["pending_id"]
-
-        result = await svc.confirm_memory(
-            pid,
-            override="Secret: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  # pragma: allowlist secret
-        )
-        assert result["status"] == "blocked"
-        # Entry should still be available for retry
-        assert pid in svc._pending
-
-
-# ============================================================
 # Issue #53 — update_memory must be scanned
 # ============================================================
 
@@ -218,14 +183,12 @@ class TestUpdateMemoryScanning:
     """update_memory must run pre- and post-distillation scanning."""
 
     async def test_update_with_secret_in_input_redacts(self) -> None:
-        svc, _storage = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-        assert result["status"] == "saved"
-        mem_id = result["id"]
+        svc, storage = _service(scanner=SecretScanner())
+        mem = await _insert(storage)
 
         # Update with text containing a secret — should be redacted before distilling
         result = await svc.update(
-            mem_id,
+            mem.id,
             "Changed CI token to ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  # pragma: allowlist secret
         )
         # The distiller returns clean text, so this should succeed
@@ -235,83 +198,22 @@ class TestUpdateMemoryScanning:
         """If the distiller output contains secrets, update should block."""
 
         class LeakyDistiller:
-            call_count = 0
-
             async def distill(self, raw_text: str) -> str:
-                self.call_count += 1
-                if self.call_count == 1:
-                    return "Distilled fact"
                 return "Token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is used"  # pragma: allowlist secret
 
-        svc, _storage = _service(
-            scanner=SecretScanner(),
-            distiller=LeakyDistiller(),
-            preview_enabled=False,
-        )
-        result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-        assert result["status"] == "saved"
-        mem_id = result["id"]
+        svc, storage = _service(scanner=SecretScanner(), distiller=LeakyDistiller())
+        mem = await _insert(storage)
 
-        result = await svc.update(mem_id, "Some update text about CI tokens")
+        result = await svc.update(mem.id, "Some update text about CI tokens")
         assert result["status"] == "blocked"
 
     async def test_update_with_email_in_input_redacts(self) -> None:
-        svc, _storage = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-        assert result["status"] == "saved"
+        svc, storage = _service(scanner=SecretScanner())
+        mem = await _insert(storage)
 
         result = await svc.update(
-            result["id"],
+            mem.id,
             "Contact alice@internal.corp for the deployment runbook",
         )
         # Should succeed — email redacted before distillation, distiller returns clean output
         assert result["status"] == "updated"
-
-
-# ============================================================
-# Issue #55 — integration tests (scanner in full pipeline)
-# ============================================================
-
-
-class TestPipelinePIIIntegration:
-    """End-to-end: PII in remember input is redacted before distillation."""
-
-    async def test_email_in_remember_is_redacted(self) -> None:
-        svc, _ = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(
-            "Alice (alice@megacorp.com) debugged the OOM in the worker pool",
-            "failure",
-            ["repo"],
-        )
-        assert result["status"] == "saved"
-        assert result["redacted_count"] >= 1
-
-    async def test_url_in_remember_is_redacted(self) -> None:
-        svc, _ = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(
-            "Portfolio at https://john-portfolio.dev shows the project architecture",
-            "context",
-            ["repo"],
-        )
-        assert result["status"] == "saved"
-        assert result["redacted_count"] >= 1
-
-    async def test_phone_in_remember_is_redacted(self) -> None:
-        svc, _ = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(
-            "Call the ops lead at +44 20 7946 0958 if the deploy breaks",
-            "context",
-            ["repo"],
-        )
-        assert result["status"] == "saved"
-        assert result["redacted_count"] >= 1
-
-    async def test_mixed_pii_all_redacted(self) -> None:
-        svc, _ = _service(scanner=SecretScanner(), preview_enabled=False)
-        result = await svc.remember(
-            "Bob (bob@startup.io, +1-415-555-0123) deployed v2.1 from 192.168.1.50",
-            "context",
-            ["repo"],
-        )
-        assert result["status"] == "saved"
-        assert result["redacted_count"] >= 3

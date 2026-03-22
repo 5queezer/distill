@@ -123,11 +123,12 @@ class TestLevelInResults:
             storage=storage,
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
         )
-        await svc.remember(
-            "We chose PostgreSQL for pgvector support", "decision", ["repo"]
+        mem = _make_memory(
+            "decision", ["repo"], "We chose PostgreSQL for pgvector support"
         )
+        vec = await FakeEmbedder().embed(mem.content)
+        await storage.save(mem, vec)
         results = await svc.search("PostgreSQL", top_k=5)
         assert len(results) >= 1
         assert results[0].level == "long-term"
@@ -138,11 +139,12 @@ class TestLevelInResults:
             storage=storage,
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
         )
-        await svc.remember(
-            "Temporary context about debugging the OOM issue", "context", ["repo"]
+        mem = _make_memory(
+            "context", ["repo"], "Temporary context about debugging the OOM issue"
         )
+        vec = await FakeEmbedder().embed(mem.content)
+        await storage.save(mem, vec)
         results = await svc.list_recent()
         assert len(results) >= 1
         assert results[0].level == "short-term"
@@ -164,7 +166,6 @@ class TestLevelBoost:
             storage=storage,
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
         )
 
         # Create a single-repo decision
