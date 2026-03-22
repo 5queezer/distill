@@ -581,6 +581,12 @@ def main() -> None:
                 sys.exit(1)
             _export_memories(fmt, output, repo, type_filter, after)
             return
+        print(
+            f"Unknown command: {cmd}\n"
+            "Usage: distill [check-hardware|reembed|seed|export]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     _run_server()
 
