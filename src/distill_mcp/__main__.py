@@ -29,29 +29,14 @@ def _init_store() -> tuple:
         return store, False, identity
 
 
-def _run_server() -> None:
-    import asyncio
-    from pathlib import Path
+def _init_embedder() -> tuple:
+    """Initialize embedding adapter based on config.
 
-    import structlog
-    from aiohttp import web
-
-    from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
-    from distill_mcp.domain.services import MemoryService
-    from distill_mcp.ingest import create_ingest_app
-    from distill_mcp.server import mcp, set_service
+    Returns (embedder, embedding_model_name).
+    """
     from distill_mcp.settings import settings
-    from distill_mcp.worker import ObservationWorker
 
-    logger = structlog.get_logger()
-
-    store, needs_async_init, identity = _init_store()
-    if needs_async_init:
-        asyncio.get_event_loop().run_until_complete(store.initialize())
-    else:
-        store.initialize()
-
-    # Provider defaults — used when EMBEDDING_MODEL / LLM_MODEL not set
+    # Provider defaults — used when EMBEDDING_MODEL not set
     _embedding_defaults = {
         "ollama": "nomic-embed-text",
         "gemini": "gemini-embedding-001",
@@ -59,19 +44,12 @@ def _run_server() -> None:
         "bedrock": "amazon.titan-embed-text-v2:0",
         "azure": "text-embedding-3-small",
     }
-    _llm_defaults = {
-        "ollama": "gemma3:4b",
-        "gemini": "gemini-2.0-flash",
-    }
 
     ep = settings.embedding_provider
-    dp = settings.distiller_provider
     embedding_model = settings.embedding_model or _embedding_defaults.get(
         ep, "nomic-embed-text"
     )
-    llm_model = settings.llm_model or _llm_defaults.get(dp, "gemma3:4b")
 
-    # Embedding provider
     if ep == "gemini":
         from distill_mcp.adapters.embeddings.gemini_embed import GeminiEmbedder
 
@@ -116,6 +94,41 @@ def _run_server() -> None:
         from distill_mcp.adapters.embeddings.ollama_embed import OllamaEmbedder
 
         embedder = OllamaEmbedder(host=settings.ollama_host, model=embedding_model)
+
+    return embedder, embedding_model
+
+
+def _run_server() -> None:
+    import asyncio
+    from pathlib import Path
+
+    import structlog
+    from aiohttp import web
+
+    from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
+    from distill_mcp.domain.services import MemoryService
+    from distill_mcp.ingest import create_ingest_app
+    from distill_mcp.server import mcp, set_service
+    from distill_mcp.settings import settings
+    from distill_mcp.worker import ObservationWorker
+
+    logger = structlog.get_logger()
+
+    store, needs_async_init, identity = _init_store()
+    if needs_async_init:
+        asyncio.get_event_loop().run_until_complete(store.initialize())
+    else:
+        store.initialize()
+
+    _llm_defaults = {
+        "ollama": "gemma3:4b",
+        "gemini": "gemini-2.0-flash",
+    }
+
+    dp = settings.distiller_provider
+    llm_model = settings.llm_model or _llm_defaults.get(dp, "gemma3:4b")
+
+    embedder, embedding_model = _init_embedder()
 
     # Distillation provider
     if dp == "gemini":
@@ -198,7 +211,7 @@ def _run_server() -> None:
                 f"Embedding dimension mismatch: stored vectors have {stored_dim} "
                 f"dimensions (model: {stored_model or 'unknown'}) but current model "
                 f"'{embedding_model}' produces {current_dim} dimensions. "
-                f"Delete the vector store and restart to re-embed all memories, "
+                f"Run 'uv run python -m distill_mcp reembed' to rebuild vectors, "
                 f"or switch back to the original embedding model."
             )
         await store.save_embedding_meta(embedding_model, current_dim)
@@ -296,6 +309,73 @@ def _export_memories(
         print(text)
 
 
+async def _reembed_async(store, embedder, embedding_model: str, data_dir: str) -> int:
+    """Re-embed all memories. Returns count of re-embedded memories."""
+    import shutil
+    import sys
+    from pathlib import Path
+
+    memories = await store.list_recent(limit=100000)
+    if not memories:
+        print("No memories to re-embed.", file=sys.stderr)
+        return 0
+
+    # Back up existing lance dir
+    lance_dir = Path(data_dir).expanduser() / "lance"
+    if lance_dir.exists():
+        old_dim = store.get_vector_dimension() or "unknown"
+        backup = lance_dir.with_name(f"lance.bak.{old_dim}")
+        if backup.exists():
+            shutil.rmtree(backup)
+        shutil.copytree(lance_dir, backup)
+        print(f"Backed up lance/ → {backup.name}/", file=sys.stderr)
+
+    # Drop old vectors table
+    if hasattr(store, "_lance") and store._lance is not None:
+        if "vectors" in store._lance.list_tables().tables:
+            store._lance.drop_table("vectors")
+        store._stored_vec_dim = None
+
+    count = 0
+    for mem in memories:
+        vec = await embedder.embed(mem.content)
+        data = [{"id": mem.id, "vector": vec, "agent_id": mem.agent_id or ""}]
+        if "vectors" in store._lance.list_tables().tables:
+            store._lance.open_table("vectors").add(data)
+        else:
+            store._lance.create_table("vectors", data)
+            store._stored_vec_dim = len(vec)
+        count += 1
+        print(
+            f"\r  Re-embedding {count}/{len(memories)}...",
+            end="",
+            file=sys.stderr,
+        )
+    new_dim = store._stored_vec_dim or len(await embedder.embed("dim"))
+    await store.save_embedding_meta(embedding_model, new_dim)
+    print(
+        f"\nDone. Re-embedded {count} memories with {embedding_model}.",
+        file=sys.stderr,
+    )
+    return count
+
+
+def _reembed() -> None:
+    """CLI entry point for re-embedding."""
+    import asyncio
+
+    from distill_mcp.settings import settings
+
+    store, needs_async_init, _identity = _init_store()
+    if needs_async_init:
+        asyncio.run(store.initialize())
+    else:
+        store.initialize()
+
+    embedder, embedding_model = _init_embedder()
+    asyncio.run(_reembed_async(store, embedder, embedding_model, settings.data_dir))
+
+
 def _print_seed_workflow() -> None:
     from pathlib import Path
 
@@ -313,6 +393,9 @@ def main() -> None:
 
             info = detect_hardware()
             print(format_report(info))
+            return
+        if cmd == "reembed":
+            _reembed()
             return
         if cmd == "seed":
             _print_seed_workflow()
