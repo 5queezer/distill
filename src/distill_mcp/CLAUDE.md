@@ -8,14 +8,13 @@ from fastmcp import FastMCP
 mcp = FastMCP("distill")
 
 @mcp.tool
-def remember(content: str, type: str, repos: list[str], tags: list[str] | None = None) -> dict:
-    """Distill raw input into anonymous team knowledge and store it.
+async def search_memory(query: str, top_k: int = 5, repo: str | None = None) -> list[dict]:
+    """Search team knowledge before proposing architecture or answering questions.
 
-    The raw text is processed locally by Ollama and never leaves your device.
-    Only the distilled factual output is stored in the team database.
+    Returns compact index (~30 tokens/result). Use get_memories for full content.
     """
     # delegate to domain service
-    return service.remember(content, type, repos, tags)
+    return await service.search(query, top_k, repo=repo)
 ```
 
 **FastMCP rules:**
@@ -27,17 +26,18 @@ def remember(content: str, type: str, repos: list[str], tags: list[str] | None =
 - Never print to stdout. FastMCP uses stdout for MCP protocol. Use structlog → stderr.
 - Test tools with `fastmcp dev server.py` or `fastmcp install claude-code server.py`
 
-## 8 MCP tools (server.py)
+## 7 MCP tools (server.py)
+
+Memories are captured automatically via hooks → ingest.py → worker.py pipeline. No explicit `remember` tool.
 
 | Tool | Purpose | R/W |
 |------|---------|-----|
-| `remember` | Distill + store (returns preview for approval) | W |
-| `confirm_memory` | Confirm pending preview, store it | W |
 | `search_memory` | Hybrid search (FTS + vector, RRF k=60) | R |
 | `get_memories` | Fetch full content by IDs (batch) | R |
 | `get_memory` | By ID | R |
 | `update_memory` | Re-distill + supersede | W |
 | `list_recent` | Filter by repo/tag/type | R |
+| `list_stale` | Find memories not accessed recently | R |
 | `forget` | Soft-delete | W |
 
 ## Three independent axes

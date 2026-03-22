@@ -10,12 +10,15 @@ Distill follows Clean Architecture (Uncle Bob). Dependencies point inward. Busin
 
 ```mermaid
 graph TB
-    subgraph "MCP Transport (stdio)"
+    subgraph "Claude Code"
         CC[Claude Code] -->|MCP protocol| SRV
+        HOOK["PostToolUse hook"] -->|"curl POST /observe"| ING
     end
 
     subgraph "Server Layer"
-        SRV["server.py — 8 MCP tools"]
+        SRV["server.py — 7 MCP tools"]
+        ING["ingest.py — HTTP /observe endpoint"]
+        WRK["worker.py — background distillation"]
         MAIN["__main__.py — wiring & startup"]
     end
 
@@ -40,6 +43,10 @@ graph TB
     end
 
     MAIN -->|wires adapters| SRV
+    MAIN -->|starts| ING
+    MAIN -->|starts| WRK
+    ING -->|"append JSONL + signal"| WRK
+    WRK -->|"distill/embed/save"| SVC
     SRV -->|delegates to| SVC
     SVC -->|depends on| PRT
     SQL -.->|implements| PRT
@@ -62,7 +69,7 @@ src/distill_mcp/
 ├── domain/              # Inner ring: pure business logic, no dependencies
 │   ├── models.py        # Memory, DistilledMemory, SearchResult (dataclasses/Pydantic)
 │   ├── ports.py         # Abstract interfaces (StoragePort, EmbeddingPort, DistillerPort)
-│   └── services.py      # Use cases: remember, search, update, forget
+│   └── services.py      # Use cases: search, update, forget
 │
 ├── adapters/            # Outer ring: implementations of ports
 │   ├── storage/
@@ -81,8 +88,10 @@ src/distill_mcp/
 │       └── jina_rerank.py     # RerankerPort → Jina Reranker API (opt-in)
 │
 ├── server.py            # FastMCP tool definitions — thin adapter
+├── ingest.py            # HTTP /observe endpoint (localhost)
+├── worker.py            # Background distillation consumer
 ├── settings.py          # pydantic-settings, env var loading
-└── __main__.py          # Entry point: wires adapters, starts FastMCP
+└── __main__.py          # Entry point: wires adapters, starts FastMCP + ingest + worker
 ```
 
 ## The dependency rule
@@ -114,14 +123,20 @@ Storage, embeddings, and distillation are configured independently:
 
 ## Key execution flows
 
-### Remember (two-phase commit)
+### Auto-observe (background pipeline)
 
-1. `remember()` sends raw text to the distillation provider
-2. Scanner checks the output for leaked secrets
-3. Dedup check rejects if cosine similarity > 0.95 with existing memory
-4. Returns a preview with `pending_id` — memory is NOT stored yet
-5. User reviews and approves
-6. `confirm_memory()` saves to the storage backend
+1. Claude calls any tool (Read, Bash, Edit, etc.)
+2. Claude Code `PostToolUse` hook fires and POSTs tool I/O to `http://127.0.0.1:<port>/observe`
+3. Ingest endpoint appends a JSON line to the private_store JSONL and signals the worker
+4. Background worker reads the entry, runs the distillation pipeline:
+   - Noise filter rejects trivial entries
+   - Scanner redacts secrets and PII from raw text
+   - Distiller (local Ollama) strips personal language, keeps facts
+   - Scanner re-checks distilled output
+   - Embedder generates 768-dim vector
+   - Dedup check rejects if cosine similarity > 0.95 with existing memory
+   - Save to storage backend
+5. Claude continues immediately — zero latency impact
 
 ### Search (hybrid with RRF)
 

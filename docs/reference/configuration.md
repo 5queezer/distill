@@ -75,13 +75,17 @@ Uses the default AWS credential chain (environment variables, `~/.aws/credential
 | `AZURE_OPENAI_ENDPOINT` | — | Endpoint URL (required when `EMBEDDING_PROVIDER=azure`) |
 | `AZURE_OPENAI_API_KEY` | — | API key (required when `EMBEDDING_PROVIDER=azure`) |
 
-## Privacy & review
+## Auto-observe pipeline
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DISTILL_INGEST_PORT` | `21746` | Port for the local HTTP `/observe` endpoint |
+
+## Privacy & processing
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DISTILL_ENABLED` | `true` | Enable LLM distillation (disable for testing) |
-| `PREVIEW_ENABLED` | `true` | Two-phase commit: show preview before storing |
-| `PREVIEW_TTL_SECONDS` | `300` | How long a pending preview stays valid |
 | `DEFAULT_AUTHOR` | `unknown` | Default author attribution |
 | `AUTH_ENABLED` | `false` | Enable git-based identity + PostgreSQL RLS |
 

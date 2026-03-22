@@ -13,10 +13,12 @@ class GeminiEmbedder:
     def __init__(
         self,
         api_key: str,
-        model: str = "text-embedding-004",
+        model: str = "gemini-embedding-001",
+        dimensions: int = 768,
     ) -> None:
         self._api_key = api_key
         self._model = model
+        self._dimensions = dimensions
 
     async def embed(self, text: str) -> list[float]:
         url = f"{API_BASE}/models/{self._model}:embedContent?key={self._api_key}"
@@ -27,6 +29,7 @@ class GeminiEmbedder:
                     json={
                         "model": f"models/{self._model}",
                         "content": {"parts": [{"text": text}]},
+                        "outputDimensionality": self._dimensions,
                     },
                     timeout=30.0,
                 )

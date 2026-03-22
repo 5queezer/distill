@@ -8,29 +8,32 @@ This page explains the complete memory lifecycle — from your raw input to a se
 
 ## The big picture
 
-When you tell Claude "remember this", your input doesn't go straight into a database. It passes through a multi-stage pipeline:
+You don't need to tell Claude to "remember" anything. Every tool call is automatically captured in the background and distilled into anonymous team knowledge.
 
 ```mermaid
 graph LR
-    A["Your raw text"] --> B["Secret scan"]
-    B --> C["Local distillation"]
-    C --> D["Post-scan"]
-    D --> E["Embedding"]
-    E --> F["Preview"]
-    F -->|you approve| G["Team DB"]
-    F -->|you edit| G
-    F -->|expires 5min| H["Discarded"]
+    A["Tool call (Read, Bash, Edit...)"] --> B["PostToolUse hook"]
+    B --> C["POST /observe"]
+    C --> D["JSONL queue"]
+    D --> E["Secret scan"]
+    E --> F["Local distillation"]
+    F --> G["Post-scan"]
+    G --> H["Embedding"]
+    H --> I["Dedup check"]
+    I --> J["Team DB"]
 ```
 
 Every stage exists for a reason:
 
 | Stage | Purpose |
 |-------|---------|
+| Hook capture | Records tool I/O automatically — zero latency impact on Claude |
+| JSONL queue | Persists raw observations locally, survives crashes |
 | Secret scan | Redacts API keys, tokens, passwords **before** they reach even the local LLM |
 | Distillation | Strips personal language, names, emotions — keeps only technical facts |
 | Post-scan | Catches anything the LLM accidentally reproduced (hard block) |
 | Embedding | Converts text to a 768-dim vector for similarity search |
-| Preview | You see exactly what will be stored before it enters the team DB |
+| Dedup check | Rejects near-identical memories (cosine > 0.95) |
 
 ## What distillation actually does
 
@@ -71,61 +74,38 @@ Not everything becomes a memory. The system rejects:
 - **Too long:** Over 8,000 characters (configurable via `MAX_MEMORY_SIZE`)
 - **No technical content:** "Had a great weekend" → the distiller returns `NO_FACTUAL_CONTENT` and the memory is rejected
 
-## The preview flow
+## How observations are captured
 
-By default, nothing is stored without your explicit approval.
+Memory capture is fully automatic. A Claude Code `PostToolUse` hook fires after every tool call and POSTs the tool name, input, and output to a local HTTP endpoint (`http://127.0.0.1:<port>/observe`).
 
-### Step 1: You trigger `remember`
+The hook runs in the background — Claude never waits for the save to complete (0ms latency impact).
 
-Claude calls the `remember` tool with your input. The system:
+### What happens in the background
 
-1. Scans for secrets and redacts them
-2. Sends the cleaned text to local Ollama for distillation
-3. Embeds the distilled text into a vector
-4. Stores everything in a **pending entry** (in-memory, not persisted)
-5. Returns a preview:
-
-```json
-{
-  "status": "preview",
-  "pending_id": "a1b2c3d4...",
-  "distilled": "Celery chosen over RQ for task queue. Reason: RQ lacks robust retry support.",
-  "expires_in_seconds": 300,
-  "redacted_count": 0
-}
-```
-
-At this point, nothing has been written to the team database.
-
-### Step 2: You review
-
-Claude shows you the distilled output. You have three choices:
-
-1. **Approve as-is** → Claude calls `confirm_memory(id="a1b2c3d4...")`
-2. **Edit and approve** → Claude calls `confirm_memory(id="a1b2c3d4...", override="your edited text")`
-3. **Do nothing** → the pending entry expires after 5 minutes and is discarded
-
-!!! warning "Why the preview matters"
-    The distiller is a 4B parameter model running locally. It's fast but not perfect. Occasionally it drops an important detail or keeps something you'd rather not share. The preview is your safety net.
-
-### Step 3: Confirmation
-
-When `confirm_memory` is called:
-
-1. The pending entry is claimed (prevents double-confirm)
-2. A **dedup check** runs — if cosine similarity > 0.95 with an existing memory, it's rejected as duplicate
-3. A new `Memory` is created with a fresh UUID and timestamp
-4. It's saved to the storage backend (SQLite or PostgreSQL)
-5. The raw text file in `~/.team-memory/private/` is deleted
+1. The `/observe` endpoint appends the observation to a JSONL file and signals the background worker
+2. The worker picks up the entry and runs the full distillation pipeline:
+   - Noise filter rejects trivial entries (short commands, empty output)
+   - Secret scanner redacts credentials and PII
+   - Local Ollama distills raw tool I/O into an impersonal factual statement
+   - Scanner re-checks the distilled output
+   - Embedding converts the text to a 768-dim vector
+   - Dedup check rejects near-duplicates (cosine > 0.95)
+   - Memory is saved to the team database
+3. Entries that arrive faster than the worker can process queue in the JSONL file naturally
 
 ### What about the raw text?
 
-Your original input is written to `~/.team-memory/private/<pending_id>.txt` with file permissions `0600` (owner-only read/write). This file:
+Raw tool I/O is written to the private_store JSONL at `~/.team-memory/private/` with file permissions `0600` (owner-only read/write). These files:
 
-- Is **never synced** to any remote
-- Is **deleted** after confirmation
-- Exists only so you could audit what was distilled from what
-- Can be deleted manually at any time (`rm ~/.team-memory/private/*`)
+- Are **never synced** to any remote
+- Exist as the observation queue — processed entries are tracked via a cursor
+- Can be deleted manually at any time
+
+### Error handling
+
+- Failed entries are retried up to 3 times, then skipped
+- If the worker is behind (burst of tool calls), it catches up when the burst subsides
+- If the distill process crashes mid-queue, unprocessed entries survive in the JSONL and are processed on restart
 
 ## Memory types
 
@@ -222,7 +202,7 @@ This creates a feedback loop: useful memories surface more often, which makes th
 
 ### 6. Score threshold
 
-Results below 0.35 are dropped. This prevents low-confidence matches from cluttering the output.
+Results below 0.10 are dropped. This prevents low-confidence matches from cluttering the output.
 
 ### What you get back
 
@@ -270,32 +250,11 @@ The dedup check runs at **confirmation time**, not at preview time. This means i
 
 ## Contradiction detection
 
-When `remember()` is called, the system doesn't just check for exact duplicates — it also looks for **related memories** that might contradict the new one.
+The background worker doesn't just check for exact duplicates — it also looks for **related memories** that might contradict a new observation.
 
-After distillation, the system searches for existing memories with cosine similarity > 0.80 (well below the 0.95 dedup threshold). These are returned in the preview response as `related_memories`:
+After distillation, the system searches for existing memories with cosine similarity > 0.80 (well below the 0.95 dedup threshold). When a contradiction is detected, the worker logs it for review via `list_stale` or `search_memory`.
 
-```json
-{
-  "status": "preview",
-  "pending_id": "a1b2c3d4...",
-  "distilled": "Redis chosen for session storage. Reason: need TTL support.",
-  "related_memories": [
-    {
-      "id": "xyz789",
-      "snippet": "Memcached chosen for session storage. Reason: simpler operational model.",
-      "similarity": 0.88
-    }
-  ]
-}
-```
-
-The system doesn't automatically resolve contradictions — that's a human judgment call. When you review the preview, you decide whether the new memory supersedes an existing one. If it does, pass the superseded IDs during confirmation:
-
-```
-confirm_memory(id="a1b2c3d4...", supersedes=["xyz789"])
-```
-
-This soft-deletes the old memory and records the supersession chain, keeping the knowledge base consistent without silent data loss.
+Since observations are captured automatically, contradiction resolution happens at search time rather than at save time. When Claude searches for a topic and finds conflicting memories, it can use `update_memory` to supersede the outdated one, or `forget` to remove it.
 
 ## Updating memories
 
@@ -379,8 +338,8 @@ Here's what a typical day looks like for a developer using Distill with Claude C
 **Morning — context loading:**
 Claude calls `search_memory` before proposing architecture for a new feature. It finds 3 relevant memories from last week's decisions. You see the compact index, Claude fetches full content for 2 of them, and adjusts its proposal accordingly.
 
-**During work — capturing decisions:**
-You and Claude decide to use WebSockets instead of SSE. Claude calls `remember` with the decision and rationale. You see the distilled preview, approve it, and it's stored as a `decision` type.
+**During work — automatic capture:**
+You and Claude decide to use WebSockets instead of SSE. As Claude edits code and runs tests, the PostToolUse hook captures every tool call. The background worker distills these into factual memories like "WebSockets chosen over SSE for real-time updates" — no manual intervention needed.
 
 **Debugging — finding prior failures:**
 You hit a cryptic error. Claude searches for related failures and finds a memory from 3 weeks ago: "Service mesh timeout caused by Envoy default idle_timeout=1h conflicting with long-polling connections. Fix: set idle_timeout=0 in Envoy config." Crisis averted.

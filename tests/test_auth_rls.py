@@ -71,15 +71,15 @@ def _service(identity: Identity | None = None) -> tuple[MemoryService, FakeStora
         storage=storage,
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
-        preview_enabled=False,
         identity=identity,
     )
     return svc, storage
 
 
-async def test_anonymous_remember_blocked():
+async def test_anonymous_write_blocked():
+    """Anonymous identity blocks all write operations."""
     svc, _ = _service(identity=ANONYMOUS)
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
+    result = await svc.forget("fake-id")
     assert result["status"] == "rejected"
     assert "identity" in result["reason"].lower()
 
@@ -102,22 +102,6 @@ async def test_anonymous_search_allowed():
     assert isinstance(results, list)  # No error thrown — reads allowed for anonymous
 
 
-async def test_authenticated_remember_sets_author():
-    ident = Identity(email="dev@example.com", repos=["distill"])
-    svc, storage = _service(identity=ident)
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert result["status"] == "saved"
-    assert storage.saved[0].author == "dev@example.com"
-
-
-async def test_no_identity_means_no_enforcement():
-    """When identity is None (auth disabled), behaves as before."""
-    svc, storage = _service(identity=None)
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert result["status"] == "saved"
-    assert storage.saved[0].author is None
-
-
 async def test_anonymous_update_blocked():
     svc, _ = _service(identity=ANONYMOUS)
     result = await svc.update("some-id", "new content")
@@ -128,14 +112,6 @@ async def test_anonymous_forget_blocked():
     svc, _ = _service(identity=ANONYMOUS)
     result = await svc.forget("some-id")
     assert result["status"] == "rejected"
-
-
-async def test_anonymous_confirm_blocked_defense_in_depth():
-    """confirm_memory itself should block for anonymous (defense-in-depth)."""
-    svc, _ = _service(identity=ANONYMOUS)
-    result = await svc.confirm_memory("fake-pending-id")
-    assert result["status"] == "rejected"
-    assert "identity" in result["reason"].lower()
 
 
 try:
@@ -162,22 +138,3 @@ def test_set_session_identity_sql():
     assert "app.user_email" in sql
     assert "dev@example.com" in sql
     assert "distill" in sql
-
-
-async def test_authenticated_user_author_propagates_to_confirm():
-    """Preview → confirm flow should carry author from identity."""
-    ident = Identity(email="dev@example.com", repos=["distill"])
-    storage = FakeStorage()
-    svc = MemoryService(
-        storage=storage,
-        embedder=FakeEmbedder(),
-        distiller=FakeDistiller(),
-        preview_enabled=True,
-        identity=ident,
-    )
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert result["status"] == "preview"
-
-    confirmed = await svc.confirm_memory(result["pending_id"])
-    assert confirmed["status"] == "saved"
-    assert storage.saved[0].author == "dev@example.com"

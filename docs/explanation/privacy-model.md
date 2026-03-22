@@ -9,13 +9,19 @@ title: Privacy Model
 **With `DISTILLER_PROVIDER=ollama` (default), your raw text never crosses a network boundary.**
 
 ```text
-Developer input (raw text)
+Tool call (Read, Bash, Edit, etc.)
         │
         ▼
    ┌─────────────┐
-   │ private_store│ ← JSONL, never synced, local only
+   │ PostToolUse  │ ← Claude Code hook, fire & forget
+   │    hook      │
    └──────┬──────┘
-          │
+          │ curl POST to localhost
+          ▼
+   ┌─────────────┐
+   │ private_store│ ← JSONL queue, never synced, local only
+   └──────┬──────┘
+          │ background worker
           ▼
    ┌─────────────┐
    │  Distiller   │ ← ollama: localhost / gemini: Google API
@@ -34,7 +40,7 @@ Developer input (raw text)
 
 ## What makes this different
 
-Every "memory MCP" stores your raw text in a database. Distill doesn't. The LLM is a mandatory privacy gateway that transforms personal thoughts into impersonal team knowledge. With `DISTILLER_PROVIDER=ollama`, your exact words never leave your machine.
+Every "memory MCP" stores your raw text in a database. Distill doesn't. The LLM is a mandatory privacy gateway that transforms tool I/O into impersonal team knowledge. With `DISTILLER_PROVIDER=ollama`, your raw data never leaves your machine. Observations are captured automatically via hooks — raw text exists only in a local JSONL queue until the background worker distills it.
 
 ## FAQ
 
@@ -44,7 +50,7 @@ Every "memory MCP" stores your raw text in a database. Distill doesn't. The LLM 
 | Can my team read what I typed? | No. Only the distilled fact is stored. |
 | Can my manager see who wrote what? | Only if you opt in (`AUTH_ENABLED=true`). Anonymous by default. |
 | Where is my raw text? | `~/.distill/private/` on your machine. Delete anytime. |
-| What if distillation leaks a name? | You review every output before it's saved. The scanner also checks for secrets. |
+| What if distillation leaks a name? | The scanner checks all distilled output for PII and secrets before saving. |
 
 ## The scanner: secrets and PII
 
@@ -73,11 +79,10 @@ In addition to secrets, the scanner detects personally identifiable information:
 
 The scanner runs on all paths that write to the team database:
 
-- `remember()` — scans raw input before distillation, scans distilled output after
-- `confirm_memory()` with `override` — scans the user-provided override text
+- **Auto-observe pipeline** — scans raw tool I/O before distillation, scans distilled output after
 - `update_memory()` — scans the new input through the full pipeline
 
-Previously, `confirm_memory` overrides and `update_memory` bypassed the scanner. This has been fixed — all write paths now pass through PII and secret scanning.
+All write paths pass through PII and secret scanning.
 
 ## Author modes
 

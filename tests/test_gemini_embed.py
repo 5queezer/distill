@@ -20,7 +20,7 @@ pytestmark = pytest.mark.asyncio
 
 def test_default_model() -> None:
     e = GeminiEmbedder(api_key="test-key")
-    assert e._model == "text-embedding-004"
+    assert e._model == "gemini-embedding-001"
 
 
 def test_custom_model() -> None:
@@ -65,7 +65,7 @@ async def test_embed_returns_vector() -> None:
 
     call_args = mock_client.post.call_args
     url = call_args[0][0]
-    assert "text-embedding-004" in url
+    assert "gemini-embedding-001" in url
     assert "key=test-key" in url
 
     body = call_args[1]["json"]

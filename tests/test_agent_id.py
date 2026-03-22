@@ -92,11 +92,7 @@ class FakeStorage:
         return []
 
 
-_VALID_INPUT = "We chose asyncpg for async PostgreSQL support"
-
-
 def _service(
-    preview_enabled: bool = False,
     *,
     fail_save: bool = False,
 ) -> tuple[MemoryService, FakeStorage, FakeDistiller]:
@@ -107,58 +103,66 @@ def _service(
         embedder=FakeEmbedder(),
         distiller=distiller,
         distill_enabled=True,
-        preview_enabled=preview_enabled,
     )
     return svc, storage, distiller
+
+
+async def _insert(
+    storage: FakeStorage,
+    content: str = "Distilled fact",
+    *,
+    type: str = "decision",
+    repos: list[str] | None = None,
+    agent_id: str | None = None,
+) -> Memory:
+    """Insert a Memory directly into FakeStorage, bypassing distillation."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    mem = Memory(
+        id=uuid4().hex,
+        content=content,
+        type=type,
+        repos=repos or ["repo"],
+        tags=[],
+        author=None,
+        created_at=datetime.now(UTC),
+        agent_id=agent_id,
+    )
+    await storage.save(mem, [0.1] * 768)
+    return mem
 
 
 # -- Tests --
 
 
-async def test_remember_stores_agent_id() -> None:
-    svc, storage, _ = _service()
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="zeroclaw")
-    assert result["status"] == "saved"
+async def test_agent_id_stored_in_memory() -> None:
+    _, storage, _ = _service()
+    mem = await _insert(storage, agent_id="zeroclaw")
     assert storage.saved[0].agent_id == "zeroclaw"
+    assert mem.agent_id == "zeroclaw"
 
 
-async def test_agent_id_none_works_as_before() -> None:
-    svc, storage, _ = _service()
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert result["status"] == "saved"
+async def test_agent_id_none_stored_correctly() -> None:
+    _, storage, _ = _service()
+    mem = await _insert(storage, agent_id=None)
     assert storage.saved[0].agent_id is None
-
-
-async def test_distillation_includes_agent_prefix() -> None:
-    svc, _, distiller = _service()
-    await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="zeroclaw")
-    assert distiller.last_input.startswith("[Agent: zeroclaw]")
-    assert _VALID_INPUT in distiller.last_input
-
-
-async def test_distillation_no_prefix_when_no_agent_id() -> None:
-    svc, _, distiller = _service()
-    await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert not distiller.last_input.startswith("[Agent:")
+    assert mem.agent_id is None
 
 
 async def test_search_filters_by_agent_id() -> None:
-    svc, _storage, _ = _service()
-    await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    await svc.remember(
-        "FastAPI chosen for REST layer", "decision", ["repo"], agent_id="agent-b"
-    )
+    svc, storage, _ = _service()
+    await _insert(storage, "asyncpg for async PostgreSQL", agent_id="agent-a")
+    await _insert(storage, "FastAPI chosen for REST layer", agent_id="agent-b")
 
     results = await svc.search("postgres", agent_id="agent-a")
     assert all(r.agent_id == "agent-a" for r in results)
 
 
 async def test_search_without_filter_returns_all() -> None:
-    svc, _storage, _ = _service()
-    await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    await svc.remember(
-        "FastAPI chosen for REST layer", "decision", ["repo"], agent_id="agent-b"
-    )
+    svc, storage, _ = _service()
+    await _insert(storage, "asyncpg for async PostgreSQL", agent_id="agent-a")
+    await _insert(storage, "FastAPI chosen for REST layer", agent_id="agent-b")
 
     results = await svc.search("chosen")
     agent_ids = {r.agent_id for r in results}
@@ -167,35 +171,22 @@ async def test_search_without_filter_returns_all() -> None:
 
 
 async def test_list_recent_filters_by_agent_id() -> None:
-    svc, _, _ = _service()
-    await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    await svc.remember(
-        "FastAPI chosen for REST layer", "decision", ["repo"], agent_id="agent-b"
-    )
+    svc, storage, _ = _service()
+    await _insert(storage, "asyncpg for async PostgreSQL", agent_id="agent-a")
+    await _insert(storage, "FastAPI chosen for REST layer", agent_id="agent-b")
 
     results = await svc.list_recent(agent_id="agent-b")
-    assert all(m.agent_id == "agent-b" for m in results)  # MemoryIndex has agent_id
+    assert all(m.agent_id == "agent-b" for m in results)
     assert len(results) == 1
 
 
-async def test_concurrent_writes_from_two_agents() -> None:
-    """Two agents writing simultaneously — both memories stored correctly."""
-    svc, storage, _ = _service()
-    results = await asyncio.gather(
-        svc.remember(
-            "asyncpg chosen for async PostgreSQL support",
-            "decision",
-            ["repo"],
-            agent_id="agent-a",
-        ),
-        svc.remember(
-            "FastAPI chosen for REST layer in the service",
-            "decision",
-            ["repo"],
-            agent_id="agent-b",
-        ),
+async def test_concurrent_inserts_from_two_agents() -> None:
+    """Two agents inserting simultaneously — both memories stored correctly."""
+    _, storage, _ = _service()
+    await asyncio.gather(
+        _insert(storage, "asyncpg for async PostgreSQL", agent_id="agent-a"),
+        _insert(storage, "FastAPI for REST layer service", agent_id="agent-b"),
     )
-    assert all(r["status"] == "saved" for r in results)
     assert len(storage.saved) == 2
     agent_ids = {m.agent_id for m in storage.saved}
     assert agent_ids == {"agent-a", "agent-b"}
@@ -206,35 +197,32 @@ async def test_concurrent_writes_from_two_agents() -> None:
 
 async def test_forget_own_memory_succeeds() -> None:
     """An agent can delete its own memory."""
-    svc, _storage, _ = _service()
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    mem_id = result["id"]
+    svc, storage, _ = _service()
+    mem = await _insert(storage, agent_id="agent-a")
 
-    out = await svc.forget(mem_id, agent_id="agent-a")
+    out = await svc.forget(mem.id, agent_id="agent-a")
     assert out["status"] == "forgotten"
-    assert out["id"] == mem_id
+    assert out["id"] == mem.id
 
 
 async def test_forget_other_agents_memory_forbidden() -> None:
     """Agent B cannot delete Agent A's memory."""
-    svc, _storage, _ = _service()
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    mem_id = result["id"]
+    svc, storage, _ = _service()
+    mem = await _insert(storage, agent_id="agent-a")
 
-    out = await svc.forget(mem_id, agent_id="agent-b")
+    out = await svc.forget(mem.id, agent_id="agent-b")
     assert out["status"] == "forbidden"
     assert "different agent" in out["reason"]
     # Memory should still exist
-    assert await svc.get(mem_id) is not None
+    assert await svc.get(mem.id) is not None
 
 
 async def test_forget_without_agent_id_always_deletes() -> None:
     """When no agent_id is provided, any memory can be deleted (admin path)."""
-    svc, _storage, _ = _service()
-    result = await svc.remember(_VALID_INPUT, "decision", ["repo"], agent_id="agent-a")
-    mem_id = result["id"]
+    svc, storage, _ = _service()
+    mem = await _insert(storage, agent_id="agent-a")
 
-    out = await svc.forget(mem_id)
+    out = await svc.forget(mem.id)
     assert out["status"] == "forgotten"
 
 
@@ -242,20 +230,3 @@ async def test_forget_nonexistent_returns_not_found() -> None:
     svc, _, _ = _service()
     out = await svc.forget("nonexistent-id")
     assert out["status"] == "not_found"
-
-
-# -- confirm_memory data-loss protection --
-
-
-async def test_confirm_memory_restores_pending_on_save_failure() -> None:
-    """If storage.save() raises, the pending entry must be preserved."""
-    svc, _storage, _ = _service(preview_enabled=True, fail_save=True)
-    pending = await svc.remember(_VALID_INPUT, "decision", ["repo"])
-    assert pending["status"] == "preview"
-    pid = pending["pending_id"]
-
-    with pytest.raises(RuntimeError, match="storage write failed"):
-        await svc.confirm_memory(pid)
-
-    # Pending entry must still be there — not lost
-    assert pid in svc._pending

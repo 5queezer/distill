@@ -33,10 +33,17 @@ def _run_server() -> None:
     import asyncio
     from pathlib import Path
 
+    import structlog
+    from aiohttp import web
+
     from distill_mcp.adapters.scanner.secret_scanner import SecretScanner
     from distill_mcp.domain.services import MemoryService
+    from distill_mcp.ingest import create_ingest_app
     from distill_mcp.server import mcp, set_service
     from distill_mcp.settings import settings
+    from distill_mcp.worker import ObservationWorker
+
+    logger = structlog.get_logger()
 
     store, needs_async_init, identity = _init_store()
     if needs_async_init:
@@ -47,7 +54,7 @@ def _run_server() -> None:
     # Provider defaults — used when EMBEDDING_MODEL / LLM_MODEL not set
     _embedding_defaults = {
         "ollama": "nomic-embed-text",
-        "gemini": "text-embedding-004",
+        "gemini": "gemini-embedding-001",
         "vertex": "text-embedding-005",
         "bedrock": "amazon.titan-embed-text-v2:0",
         "azure": "text-embedding-3-small",
@@ -127,8 +134,6 @@ def _run_server() -> None:
 
         distiller = OllamaDistiller(host=settings.ollama_host, model=llm_model)
 
-    private_dir = Path(settings.data_dir).expanduser() / "private"
-
     scanner = SecretScanner()
 
     reranker = None
@@ -145,16 +150,45 @@ def _run_server() -> None:
         embedder=embedder,
         distiller=distiller,
         distill_enabled=settings.distill_enabled,
-        preview_enabled=settings.preview_enabled,
-        preview_ttl_seconds=settings.preview_ttl_seconds,
-        private_dir=private_dir,
         scanner=scanner,
         max_memory_size=settings.max_memory_size,
         identity=identity,
         reranker=reranker,
     )
     set_service(service)
-    mcp.run(transport="stdio")
+
+    observe_dir = Path(settings.data_dir).expanduser() / "private"
+    observe_jsonl = observe_dir / "observations.jsonl"
+    observe_cursor = observe_dir / ".cursor"
+    wake_event = asyncio.Event()
+
+    worker = ObservationWorker(
+        jsonl_path=observe_jsonl,
+        cursor_path=observe_cursor,
+        wake_event=wake_event,
+        distiller=distiller,
+        embedder=embedder,
+        storage=store,
+        scanner=scanner,
+        distill_enabled=settings.distill_enabled,
+        max_memory_size=settings.max_memory_size,
+    )
+
+    ingest_app = create_ingest_app(observe_jsonl, wake_event)
+
+    async def _run_all() -> None:
+        """Start ingest HTTP server + worker, then run MCP stdio server."""
+        observe_dir.mkdir(parents=True, exist_ok=True)
+        runner = web.AppRunner(ingest_app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", settings.ingest_port)
+        await site.start()
+        logger.info("ingest_server_started", port=settings.ingest_port)
+        worker_task = asyncio.create_task(worker.run_forever())
+        await mcp.run_stdio_async()
+        worker_task.cancel()
+
+    asyncio.run(_run_all())
 
 
 def _export_memories(

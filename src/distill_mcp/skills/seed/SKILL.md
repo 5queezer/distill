@@ -6,7 +6,8 @@ them with correct metadata.
 
 ## Prerequisites
 
-- `distill` MCP server running with `remember` and `search_memory` tools available
+- `distill` MCP server running with `search_memory` and `update_memory` tools available
+- Ingest HTTP endpoint running (started automatically with the MCP server)
 - Inside a git repository
 
 ## Workflow
@@ -57,12 +58,20 @@ git show <hash> -- <relevant files>
 
 **Long/AI-generated messages:** The message IS the knowledge. Skim code only if unclear.
 
-### 3. Call `remember` with correct metadata
+### 3. Save extracted knowledge via the ingest endpoint
 
-Every `remember` call MUST include:
-- **content**: The distilled knowledge (what + why, not implementation details)
-- **type**: One of decision/pattern/failure/dependency/context
-- **repos**: Set to the current repo name
+For each extracted commit, POST to the local ingest endpoint:
+```bash
+curl -s -X POST http://127.0.0.1:${DISTILL_INGEST_PORT:-21746}/observe \
+  -H 'Content-Type: application/json' \
+  -d '{"tool_name": "seed", "input": "<commit hash>", "output": "<distilled knowledge>"}'
+```
+
+The background worker will distill, embed, and store each observation.
+
+Every observation MUST include:
+- **output**: The distilled knowledge (what + why, not implementation details)
+- **input**: The commit hash for traceability
 
 When a later commit revises an earlier decision, reference the evolution:
 > "Initially chose SQLite for storage (2024-01). Switched to PostgreSQL + pgvector

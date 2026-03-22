@@ -4,48 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 from distill_mcp.domain.models import Memory, SearchResult
 from distill_mcp.domain.services import MemoryService
-from distill_mcp.server import detect_repo
-
-# -- detect_repo (sync tests, no asyncio mark) --
-
-
-def test_detect_repo_parses_ssh_url() -> None:
-    fake = type(
-        "R",
-        (),
-        {"returncode": 0, "stdout": "git@github.com:5queezer/auth-service.git\n"},
-    )
-    with patch("distill_mcp.server.subprocess.run", return_value=fake):
-        assert detect_repo() == "auth-service"
-
-
-def test_detect_repo_parses_https_url() -> None:
-    fake = type(
-        "R", (), {"returncode": 0, "stdout": "https://github.com/org/my-repo.git\n"}
-    )
-    with patch("distill_mcp.server.subprocess.run", return_value=fake):
-        assert detect_repo() == "my-repo"
-
-
-def test_detect_repo_no_suffix() -> None:
-    fake = type(
-        "R", (), {"returncode": 0, "stdout": "https://github.com/org/my-repo\n"}
-    )
-    with patch("distill_mcp.server.subprocess.run", return_value=fake):
-        assert detect_repo() == "my-repo"
-
-
-def test_detect_repo_returns_none_on_failure() -> None:
-    fake = type("R", (), {"returncode": 128, "stdout": ""})
-    with patch("distill_mcp.server.subprocess.run", return_value=fake):
-        assert detect_repo() is None
-
 
 # -- search with repo filter --
 

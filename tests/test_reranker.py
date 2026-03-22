@@ -198,7 +198,6 @@ class TestSearchWithReranker:
             storage=FakeStorage(results_from_db),
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
             reranker=fake_reranker,
         )
         results = await service.search("query")
@@ -222,7 +221,6 @@ class TestSearchWithReranker:
             storage=FakeStorage(results_from_db),
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
             reranker=None,
         )
         results = await service.search("query")
@@ -238,7 +236,6 @@ class TestSearchWithReranker:
             storage=FakeStorage([]),
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
             reranker=fake_reranker,
         )
         results = await service.search("query")
@@ -256,7 +253,6 @@ class TestSearchWithReranker:
             storage=FakeStorage(results_from_db),
             embedder=FakeEmbedder(),
             distiller=FakeDistiller(),
-            preview_enabled=False,
             reranker=fake_reranker,
         )
         results = await service.search("query")

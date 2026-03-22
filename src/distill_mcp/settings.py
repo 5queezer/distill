@@ -45,10 +45,9 @@ class Settings(BaseSettings):
     max_memory_size: int = 8000
     fts_language: str = "simple"
     distill_enabled: bool = True
-    preview_enabled: bool = True
-    preview_ttl_seconds: int = 300
     log_level: str = "INFO"
     auth_enabled: bool = False  # Enable git-based identity + RLS
+    ingest_port: int = 21746  # Local HTTP port for /observe endpoint
     rerank_enabled: bool = False
     jina_api_key: str | None = None
     rerank_model: str = "jina-reranker-v2-base-multilingual"

@@ -78,7 +78,6 @@ def _service(search_results: list[SearchResult] | None = None) -> MemoryService:
         storage=FakeStorage(search_results),
         embedder=FakeEmbedder(),
         distiller=FakeDistiller(),
-        preview_enabled=False,
     )
 
 
@@ -98,35 +97,30 @@ def _memory(*, days_old: int = 0) -> Memory:
 
 
 class TestNoiseFilter:
-    async def test_rejects_greeting(self) -> None:
-        result = await _service().remember("hello", "context", ["r"])
-        assert result["status"] == "rejected"
-        assert "trivial" in result["reason"]
+    def test_rejects_greeting(self) -> None:
+        reason = MemoryService._is_noise("hello")
+        assert reason is not None
+        assert "trivial" in reason
 
-    async def test_rejects_emoji_reaction(self) -> None:
-        result = await _service().remember("\U0001f44d", "context", ["r"])
-        assert result["status"] == "rejected"
+    def test_rejects_emoji_reaction(self) -> None:
+        assert MemoryService._is_noise("\U0001f44d") is not None
 
-    async def test_rejects_short_input(self) -> None:
-        result = await _service().remember("too short", "context", ["r"])
-        assert result["status"] == "rejected"
-        assert str(MIN_CONTENT_LENGTH) in result["reason"]
+    def test_rejects_short_input(self) -> None:
+        reason = MemoryService._is_noise("too short")
+        assert reason is not None
+        assert str(MIN_CONTENT_LENGTH) in reason
 
-    async def test_accepts_substantive_input(self) -> None:
-        result = await _service().remember(
-            "We decided to use PostgreSQL for the main database because of pgvector support.",
-            "decision",
-            ["repo"],
+    def test_accepts_substantive_input(self) -> None:
+        result = MemoryService._is_noise(
+            "We decided to use PostgreSQL for the main database because of pgvector support."
         )
-        assert result["status"] == "saved"
+        assert result is None
 
-    async def test_noise_check_is_case_insensitive(self) -> None:
-        result = await _service().remember("THANKS", "context", ["r"])
-        assert result["status"] == "rejected"
+    def test_noise_check_is_case_insensitive(self) -> None:
+        assert MemoryService._is_noise("THANKS") is not None
 
-    async def test_noise_check_strips_whitespace(self) -> None:
-        result = await _service().remember("  ok  ", "context", ["r"])
-        assert result["status"] == "rejected"
+    def test_noise_check_strips_whitespace(self) -> None:
+        assert MemoryService._is_noise("  ok  ") is not None
 
 
 # -- Hard min score tests --
