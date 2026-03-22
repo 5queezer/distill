@@ -75,3 +75,33 @@ async def test_post_observe_rejects_empty_body(client):
 async def test_get_observe_returns_405(client):
     resp = await client.get("/observe")
     assert resp.status == 405
+
+
+async def test_rejects_non_string_input(client):
+    resp = await client.post(
+        "/observe",
+        json={"tool_name": "Bash", "input": {"nested": "dict"}, "output": "ok"},
+    )
+    assert resp.status == 400
+
+
+async def test_truncates_oversized_fields(client, jsonl_path):
+    long_output = "x" * 20000
+    await client.post(
+        "/observe",
+        json={"tool_name": "Bash", "input": "cmd", "output": long_output},
+    )
+    lines = jsonl_path.read_text().strip().split("\n")
+    entry = json.loads(lines[0])
+    assert len(entry["output"]) == 8000
+
+
+async def test_newlines_in_fields_produce_single_jsonl_line(client, jsonl_path):
+    await client.post(
+        "/observe",
+        json={"tool_name": "Bash", "input": "echo\nhi", "output": "line1\nline2"},
+    )
+    lines = jsonl_path.read_text().strip().split("\n")
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert "\n" in entry["input"]
