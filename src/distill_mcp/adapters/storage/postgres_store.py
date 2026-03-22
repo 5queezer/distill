@@ -210,29 +210,23 @@ class PostgresStore:
         """Return (model_name, dimension) from stored metadata."""
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
-            model_row = await conn.fetchrow(
-                "SELECT value FROM db_meta WHERE key = 'embedding_model'"
+            rows = await conn.fetch(
+                "SELECT key, value FROM db_meta "
+                "WHERE key IN ('embedding_model', 'embedding_dim')"
             )
-            dim_row = await conn.fetchrow(
-                "SELECT value FROM db_meta WHERE key = 'embedding_dim'"
-            )
-        model = model_row["value"] if model_row else None
-        dim = int(dim_row["value"]) if dim_row else None
+        meta = {r["key"]: r["value"] for r in rows}
+        model = meta.get("embedding_model")
+        dim = int(meta["embedding_dim"]) if "embedding_dim" in meta else None
         return model, dim
 
     async def save_embedding_meta(self, model: str, dim: int) -> None:
         """Store embedding model name and dimension."""
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO db_meta (key, value) VALUES ('embedding_model', $1) "
-                "ON CONFLICT (key) DO UPDATE SET value = $1",
-                model,
-            )
-            await conn.execute(
-                "INSERT INTO db_meta (key, value) VALUES ('embedding_dim', $1) "
-                "ON CONFLICT (key) DO UPDATE SET value = $1",
-                str(dim),
+            await conn.executemany(
+                "INSERT INTO db_meta (key, value) VALUES ($1, $2) "
+                "ON CONFLICT (key) DO UPDATE SET value = $2",
+                [("embedding_model", model), ("embedding_dim", str(dim))],
             )
 
     # -- StoragePort implementation --

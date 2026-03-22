@@ -178,10 +178,14 @@ def _run_server() -> None:
 
     async def _validate_embedding_dim() -> None:
         """Check that current embedding model matches stored vector dimensions."""
-        if not hasattr(store, "get_vector_dimension"):
-            return
         stored_dim = store.get_vector_dimension()
         if stored_dim is None:
+            return
+        stored_model, _ = await store.get_embedding_meta()
+        if stored_model == embedding_model:
+            logger.info(
+                "embedding_dim_validated", model=embedding_model, dim=stored_dim
+            )
             return
         try:
             test_vec = await embedder.embed("dimension check")
@@ -190,14 +194,6 @@ def _run_server() -> None:
             return
         current_dim = len(test_vec)
         if current_dim != stored_dim:
-            # Try to get stored model name for a better error message
-            stored_model = None
-            if hasattr(store, "get_embedding_meta"):
-                meta = store.get_embedding_meta()
-                if asyncio.iscoroutine(meta):
-                    stored_model, _ = await meta
-                else:
-                    stored_model, _ = meta
             raise RuntimeError(
                 f"Embedding dimension mismatch: stored vectors have {stored_dim} "
                 f"dimensions (model: {stored_model or 'unknown'}) but current model "
@@ -205,15 +201,8 @@ def _run_server() -> None:
                 f"Delete the vector store and restart to re-embed all memories, "
                 f"or switch back to the original embedding model."
             )
-        if hasattr(store, "save_embedding_meta"):
-            result = store.save_embedding_meta(embedding_model, current_dim)
-            if asyncio.iscoroutine(result):
-                await result
-        logger.info(
-            "embedding_dim_validated",
-            model=embedding_model,
-            dim=current_dim,
-        )
+        await store.save_embedding_meta(embedding_model, current_dim)
+        logger.info("embedding_dim_validated", model=embedding_model, dim=current_dim)
 
     async def _run_all() -> None:
         """Start ingest HTTP server + worker, then run MCP stdio server."""

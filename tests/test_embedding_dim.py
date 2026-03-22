@@ -68,23 +68,25 @@ async def test_dimension_read_from_schema_on_init(tmp_path) -> None:
     assert store2.get_vector_dimension() == 768
 
 
-def test_embedding_meta_roundtrip(store: SqliteStore) -> None:
-    model, dim = store.get_embedding_meta()
+@pytest.mark.asyncio
+async def test_embedding_meta_roundtrip(store: SqliteStore) -> None:
+    model, dim = await store.get_embedding_meta()
     assert model is None
     assert dim is None
 
-    store.save_embedding_meta("nomic-embed-text", 768)
+    await store.save_embedding_meta("nomic-embed-text", 768)
 
-    model, dim = store.get_embedding_meta()
+    model, dim = await store.get_embedding_meta()
     assert model == "nomic-embed-text"
     assert dim == 768
 
 
-def test_embedding_meta_update(store: SqliteStore) -> None:
-    store.save_embedding_meta("nomic-embed-text", 768)
-    store.save_embedding_meta("gte-qwen2-1.5b", 3072)
+@pytest.mark.asyncio
+async def test_embedding_meta_update(store: SqliteStore) -> None:
+    await store.save_embedding_meta("nomic-embed-text", 768)
+    await store.save_embedding_meta("gte-qwen2-1.5b", 3072)
 
-    model, dim = store.get_embedding_meta()
+    model, dim = await store.get_embedding_meta()
     assert model == "gte-qwen2-1.5b"
     assert dim == 3072
 
