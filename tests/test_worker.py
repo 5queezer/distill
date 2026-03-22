@@ -97,7 +97,7 @@ def _make_worker(
 
 
 async def test_worker_processes_single_entry(tmp_path):
-    worker, storage, _, wake = _make_worker(tmp_path)
+    worker, storage, _, _wake = _make_worker(tmp_path)
     jsonl_path = tmp_path / "observations.jsonl"
     _write_entry(jsonl_path, "Bash", "git status", "On branch main\nnothing to commit")
 
@@ -123,7 +123,7 @@ async def test_worker_processes_multiple_entries(tmp_path):
 
 
 async def test_worker_skips_noise(tmp_path):
-    worker, storage, distiller, _ = _make_worker(tmp_path)
+    worker, _storage, distiller, _ = _make_worker(tmp_path)
     jsonl_path = tmp_path / "observations.jsonl"
     # Short output that should be filtered as noise
     _write_entry(jsonl_path, "Bash", "echo hi", "hi")
@@ -158,7 +158,7 @@ async def test_worker_cursor_persists(tmp_path):
 
 
 async def test_worker_cursor_survives_restart(tmp_path):
-    worker1, storage1, _, _ = _make_worker(tmp_path)
+    worker1, _storage1, _, _ = _make_worker(tmp_path)
     jsonl_path = tmp_path / "observations.jsonl"
     _write_entry(
         jsonl_path,
