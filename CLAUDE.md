@@ -76,6 +76,7 @@ Every code change follows this sequence. Do not skip steps.
    Ollama-dependent tests are marked with `@pytest.mark.ollama` and skipped in CI (no Ollama on Ubuntu runners). They run locally only.
 7. **Green gate** — CI must be green before merging. If CI fails: read the logs, fix locally, push again. Repeat until green.
 8. **Merge** — Squash-merge into `main` via GitHub.
+9. **Release** — When ready to publish a new version, run `/release <version>` (e.g. `/release 0.4.0`). This bumps `pyproject.toml` + `__init__.py`, tags, and creates a GitHub release that triggers PyPI publishing.
 
 ## What NOT to do
 
