@@ -45,8 +45,6 @@ class Settings(BaseSettings):
     max_memory_size: int = 8000
     fts_language: str = "simple"
     distill_enabled: bool = True
-    preview_enabled: bool = True
-    preview_ttl_seconds: int = 300
     log_level: str = "INFO"
     auth_enabled: bool = False  # Enable git-based identity + RLS
     ingest_port: int = 21746  # Local HTTP port for /observe endpoint
