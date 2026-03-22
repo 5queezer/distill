@@ -117,7 +117,7 @@ def test_seed_exits_when_server_unreachable():
 
 
 def test_seed_since_flag(ingest_server):
-    port, received = ingest_server
+    port, _received = ingest_server
     captured_cmds: list[list[str]] = []
 
     base_mock = _make_git_mock(log="")
