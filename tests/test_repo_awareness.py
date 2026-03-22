@@ -39,6 +39,7 @@ class FakeStorage:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        **kw,
     ) -> list[SearchResult]:
         out = []
         for m in self._mems.values():

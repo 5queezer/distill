@@ -171,10 +171,18 @@ class MemoryService:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
     ) -> list[MemoryIndex]:
         vec = await self._embedder.embed(query)
         results = await self._storage.search(
-            query, vec, top_k, repo=repo, agent_id=agent_id
+            query,
+            vec,
+            top_k,
+            repo=repo,
+            agent_id=agent_id,
+            after=after,
+            before=before,
         )
 
         # Rerank step (optional, typically GCP-only)
@@ -345,3 +353,11 @@ class MemoryService:
                 if len(stale) >= limit:
                     break
         return stale
+
+    async def get_lineage(self, memory_id: str) -> list[dict]:
+        """Return the supersedes chain for a memory (both directions)."""
+        return await self._storage.get_lineage(memory_id)
+
+    async def purge_expired(self, retention_days: int) -> int:
+        """Hard-delete memories soft-deleted more than retention_days ago."""
+        return await self._storage.purge_expired(retention_days)

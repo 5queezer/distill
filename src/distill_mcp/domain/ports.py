@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from distill_mcp.domain.models import Memory, SearchResult
 
 
@@ -21,6 +23,8 @@ class StoragePort(Protocol):
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
     ) -> list[SearchResult]: ...
     async def delete(self, id: str) -> None: ...
     async def record_access(self, id: str) -> None: ...
@@ -48,6 +52,21 @@ class StoragePort(Protocol):
 
         Returns list of (id, similarity_score) sorted by similarity desc.
         Used for contradiction detection — caller decides if results conflict.
+        """
+        ...
+
+    async def get_lineage(self, memory_id: str) -> list[dict]:
+        """Return the supersedes chain for a memory (both directions).
+
+        Returns list of dicts with id, content snippet, created_at, direction
+        ("predecessor" or "successor"), ordered from oldest to newest.
+        """
+        ...
+
+    async def purge_expired(self, retention_days: int) -> int:
+        """Hard-delete memories soft-deleted more than retention_days ago.
+
+        Also removes associated vectors. Returns count of purged memories.
         """
         ...
 

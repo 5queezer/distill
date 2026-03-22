@@ -217,6 +217,17 @@ def _run_server() -> None:
         await store.save_embedding_meta(embedding_model, current_dim)
         logger.info("embedding_dim_validated", model=embedding_model, dim=current_dim)
 
+    async def _purge_expired_memories() -> None:
+        """Hard-delete soft-deleted memories past the retention period."""
+        if settings.retention_days > 0:
+            purged = await service.purge_expired(settings.retention_days)
+            if purged:
+                logger.info(
+                    "retention_purge_complete",
+                    purged=purged,
+                    retention_days=settings.retention_days,
+                )
+
     async def _run_all() -> None:
         """Start ingest HTTP server + worker, then run MCP stdio server."""
         observe_dir.mkdir(parents=True, exist_ok=True)
@@ -227,7 +238,9 @@ def _run_server() -> None:
         await site.start()
         logger.info("ingest_server_started", port=settings.ingest_port)
         worker_task = asyncio.create_task(worker.run_forever())
+        purge_task = asyncio.create_task(_purge_expired_memories())
         await mcp.run_stdio_async()
+        purge_task.cancel()
         worker_task.cancel()
 
     asyncio.run(_run_all())

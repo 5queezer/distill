@@ -278,6 +278,8 @@ class PostgresStore:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -300,6 +302,10 @@ class PostgresStore:
             if repo is not None and repo not in mem.repos:
                 continue
             if agent_id is not None and mem.agent_id != agent_id:
+                continue
+            if after is not None and mem.created_at < after:
+                continue
+            if before is not None and mem.created_at > before:
                 continue
             out.append(SearchResult(memory=mem, score=score))
         return out
@@ -405,6 +411,91 @@ class PostgresStore:
         async with pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
         return [(r["id"], round(r["similarity"], 4)) for r in rows]
+
+    async def get_lineage(self, memory_id: str) -> list[dict]:
+        """Return the supersedes chain for a memory (both directions)."""
+        pool = await self._ensure_pool()
+
+        async with pool.acquire() as conn:
+            # Walk backwards: collect predecessors (oldest first via reverse)
+            predecessors: list[dict] = []
+            seen: set[str] = {memory_id}
+            current = memory_id
+            while True:
+                row = await conn.fetchrow(
+                    "SELECT supersedes FROM memories WHERE id = $1", current
+                )
+                if not row or not row["supersedes"]:
+                    break
+                pred_id = row["supersedes"]
+                if pred_id in seen:
+                    break
+                seen.add(pred_id)
+                pred_row = await conn.fetchrow(
+                    "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
+                    pred_id,
+                )
+                if not pred_row:
+                    break
+                predecessors.append(self._lineage_entry(pred_row, "predecessor"))
+                current = pred_id
+            predecessors.reverse()
+
+            # Add the target memory itself
+            chain = predecessors
+            target_row = await conn.fetchrow(
+                "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
+                memory_id,
+            )
+            if target_row:
+                chain.append(self._lineage_entry(target_row, "self"))
+
+            # Walk forward: find successors
+            current = memory_id
+            while True:
+                row = await conn.fetchrow(
+                    "SELECT id, content, created_at, deleted_at FROM memories WHERE supersedes = $1",
+                    current,
+                )
+                if not row or row["id"] in seen:
+                    break
+                seen.add(row["id"])
+                chain.append(self._lineage_entry(row, "successor"))
+                current = row["id"]
+
+        return chain
+
+    @staticmethod
+    def _lineage_entry(row: asyncpg.Record, direction: str) -> dict:
+        content = row["content"]
+        snippet = content[:80] + ("..." if len(content) > 80 else "")
+        created = row["created_at"]
+        deleted = row["deleted_at"]
+        return {
+            "id": row["id"],
+            "snippet": snippet,
+            "created_at": created.isoformat() if created else None,
+            "deleted_at": deleted.isoformat() if deleted else None,
+            "direction": direction,
+        }
+
+    async def purge_expired(self, retention_days: int) -> int:
+        """Hard-delete memories soft-deleted more than retention_days ago."""
+        from datetime import timedelta
+
+        pool = await self._ensure_pool()
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+                cutoff,
+            )
+        # asyncpg returns "DELETE N"
+        count = int(result.split()[-1])
+        if count > 0:
+            log.info("purge_expired", purged=count, retention_days=retention_days)
+        return count
 
     # -- Internal helpers --
 
