@@ -64,6 +64,7 @@ class FakeStorage:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        **kw,
     ) -> list[SearchResult]:
         return list(self._search_results)
 

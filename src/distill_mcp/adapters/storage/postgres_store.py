@@ -278,6 +278,8 @@ class PostgresStore:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -300,6 +302,10 @@ class PostgresStore:
             if repo is not None and repo not in mem.repos:
                 continue
             if agent_id is not None and mem.agent_id != agent_id:
+                continue
+            if after is not None and mem.created_at < after:
+                continue
+            if before is not None and mem.created_at > before:
                 continue
             out.append(SearchResult(memory=mem, score=score))
         return out
@@ -405,6 +411,107 @@ class PostgresStore:
         async with pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
         return [(r["id"], round(r["similarity"], 4)) for r in rows]
+
+    async def get_lineage(self, memory_id: str) -> list[dict]:
+        """Return the supersedes chain for a memory (both directions)."""
+        pool = await self._ensure_pool()
+        chain: list[dict] = []
+
+        async with pool.acquire() as conn:
+            # Walk backwards: find predecessors
+            current = memory_id
+            while True:
+                row = await conn.fetchrow(
+                    "SELECT supersedes FROM memories WHERE id = $1", current
+                )
+                if not row or not row["supersedes"]:
+                    break
+                pred_id = row["supersedes"]
+                pred_row = await conn.fetchrow(
+                    "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
+                    pred_id,
+                )
+                if not pred_row:
+                    break
+                chain.insert(
+                    0,
+                    {
+                        "id": pred_row["id"],
+                        "snippet": pred_row["content"][:80],
+                        "created_at": pred_row["created_at"].isoformat()
+                        if pred_row["created_at"]
+                        else None,
+                        "deleted_at": pred_row["deleted_at"].isoformat()
+                        if pred_row["deleted_at"]
+                        else None,
+                        "direction": "predecessor",
+                    },
+                )
+                current = pred_id
+
+            # Add the target memory itself
+            target_row = await conn.fetchrow(
+                "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
+                memory_id,
+            )
+            if target_row:
+                chain.append(
+                    {
+                        "id": target_row["id"],
+                        "snippet": target_row["content"][:80],
+                        "created_at": target_row["created_at"].isoformat()
+                        if target_row["created_at"]
+                        else None,
+                        "deleted_at": target_row["deleted_at"].isoformat()
+                        if target_row["deleted_at"]
+                        else None,
+                        "direction": "self",
+                    },
+                )
+
+            # Walk forward: find successors
+            current = memory_id
+            while True:
+                row = await conn.fetchrow(
+                    "SELECT id, content, created_at, deleted_at FROM memories WHERE supersedes = $1",
+                    current,
+                )
+                if not row:
+                    break
+                chain.append(
+                    {
+                        "id": row["id"],
+                        "snippet": row["content"][:80],
+                        "created_at": row["created_at"].isoformat()
+                        if row["created_at"]
+                        else None,
+                        "deleted_at": row["deleted_at"].isoformat()
+                        if row["deleted_at"]
+                        else None,
+                        "direction": "successor",
+                    },
+                )
+                current = row["id"]
+
+        return chain
+
+    async def purge_expired(self, retention_days: int) -> int:
+        """Hard-delete memories soft-deleted more than retention_days ago."""
+        from datetime import timedelta
+
+        pool = await self._ensure_pool()
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+                cutoff,
+            )
+        # asyncpg returns "DELETE N"
+        count = int(result.split()[-1])
+        if count > 0:
+            log.info("purge_expired", purged=count, retention_days=retention_days)
+        return count
 
     # -- Internal helpers --
 

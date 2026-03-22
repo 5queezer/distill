@@ -205,6 +205,8 @@ class SqliteStore:
         *,
         repo: str | None = None,
         agent_id: str | None = None,
+        after: datetime | None = None,
+        before: datetime | None = None,
     ) -> list[SearchResult]:
         from distill_mcp.domain.models import SearchResult
 
@@ -222,6 +224,10 @@ class SqliteStore:
             if repo is not None and repo not in mem.repos:
                 continue
             if agent_id is not None and mem.agent_id != agent_id:
+                continue
+            if after is not None and mem.created_at < after:
+                continue
+            if before is not None and mem.created_at > before:
                 continue
             out.append(SearchResult(memory=mem, score=score))
         return out
@@ -328,6 +334,113 @@ class SqliteStore:
             if len(out) >= top_k:
                 break
         return out
+
+    async def get_lineage(self, memory_id: str) -> list[dict]:
+        """Return the supersedes chain for a memory (both directions)."""
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
+
+        chain: list[dict] = []
+
+        # Walk backwards: find predecessors (what this memory superseded)
+        current = memory_id
+        while True:
+            row = self._conn.execute(
+                "SELECT supersedes FROM memories WHERE id = ?", (current,)
+            ).fetchone()
+            if not row or not row["supersedes"]:
+                break
+            pred_id = row["supersedes"]
+            pred_row = self._conn.execute(
+                "SELECT id, content, created_at, deleted_at FROM memories WHERE id = ?",
+                (pred_id,),
+            ).fetchone()
+            if not pred_row:
+                break
+            chain.insert(
+                0,
+                {
+                    "id": pred_row["id"],
+                    "snippet": pred_row["content"][:80],
+                    "created_at": pred_row["created_at"],
+                    "deleted_at": pred_row["deleted_at"],
+                    "direction": "predecessor",
+                },
+            )
+            current = pred_id
+
+        # Add the target memory itself
+        target_row = self._conn.execute(
+            "SELECT id, content, created_at, deleted_at FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+        if target_row:
+            chain.append(
+                {
+                    "id": target_row["id"],
+                    "snippet": target_row["content"][:80],
+                    "created_at": target_row["created_at"],
+                    "deleted_at": target_row["deleted_at"],
+                    "direction": "self",
+                },
+            )
+
+        # Walk forward: find successors (what superseded this memory)
+        current = memory_id
+        while True:
+            row = self._conn.execute(
+                "SELECT id, content, created_at, deleted_at FROM memories WHERE supersedes = ?",
+                (current,),
+            ).fetchone()
+            if not row:
+                break
+            chain.append(
+                {
+                    "id": row["id"],
+                    "snippet": row["content"][:80],
+                    "created_at": row["created_at"],
+                    "deleted_at": row["deleted_at"],
+                    "direction": "successor",
+                },
+            )
+            current = row["id"]
+
+        return chain
+
+    async def purge_expired(self, retention_days: int) -> int:
+        """Hard-delete memories soft-deleted more than retention_days ago."""
+        if self._conn is None or self._lance is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
+
+        from datetime import timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
+
+        # Find IDs to purge
+        rows = self._conn.execute(
+            "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+            (cutoff,),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if not ids:
+            return 0
+
+        placeholders = ",".join("?" for _ in ids)
+        # Remove from FTS index
+        self._conn.execute(
+            f"DELETE FROM memories_fts WHERE id IN ({placeholders})", ids
+        )
+        # Remove from memories table
+        self._conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+        self._conn.commit()
+
+        # Remove from LanceDB vectors
+        if self._has_vec_table():
+            table = self._lance.open_table("vectors")
+            filter_expr = " OR ".join(f'id = "{mid}"' for mid in ids)
+            table.delete(filter_expr)
+
+        return len(ids)
 
     def _has_vec_table(self) -> bool:
         if self._lance is None:

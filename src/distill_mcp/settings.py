@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False
     jina_api_key: str | None = None
     rerank_model: str = "jina-reranker-v2-base-multilingual"
+    retention_days: int = 90  # hard-delete soft-deleted memories after this many days
 
 
 settings = Settings()

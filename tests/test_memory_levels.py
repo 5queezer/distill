@@ -82,7 +82,9 @@ class FakeStorage:
     async def delete(self, id):
         self._memories.pop(id, None)
 
-    async def search(self, query_text, query_vec, top_k, *, repo=None, agent_id=None):
+    async def search(
+        self, query_text, query_vec, top_k, *, repo=None, agent_id=None, **kw
+    ):
         results = []
         for mem, score in self._memories.values():
             if repo is not None and repo not in mem.repos:

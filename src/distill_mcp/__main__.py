@@ -217,10 +217,22 @@ def _run_server() -> None:
         await store.save_embedding_meta(embedding_model, current_dim)
         logger.info("embedding_dim_validated", model=embedding_model, dim=current_dim)
 
+    async def _purge_expired_memories() -> None:
+        """Hard-delete soft-deleted memories past the retention period."""
+        if settings.retention_days > 0:
+            purged = await service.purge_expired(settings.retention_days)
+            if purged:
+                logger.info(
+                    "retention_purge_complete",
+                    purged=purged,
+                    retention_days=settings.retention_days,
+                )
+
     async def _run_all() -> None:
         """Start ingest HTTP server + worker, then run MCP stdio server."""
         observe_dir.mkdir(parents=True, exist_ok=True)
         await _validate_embedding_dim()
+        await _purge_expired_memories()
         runner = web.AppRunner(ingest_app)
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", settings.ingest_port)

@@ -1,4 +1,4 @@
-"""MCP server — thin adapter exposing 7 tools + 1 prompt. No business logic here."""
+"""MCP server — thin adapter exposing 8 tools + 1 prompt. No business logic here."""
 
 from __future__ import annotations
 
@@ -54,6 +54,8 @@ async def search_memory(
     top_k: int = 5,
     repo: str | None = None,
     agent_id: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
 ) -> list[dict]:
     """Search team knowledge before proposing architecture, creating files,
     refactoring, or answering "how should we..." questions.
@@ -63,13 +65,25 @@ async def search_memory(
 
     Returns compact index (~30 tokens/result). Use get_memories to fetch
     full content for relevant IDs only (not all results).
-    Optionally filter by repo name and/or agent_id.
+    Optionally filter by repo name, agent_id, and/or date range
+    (after/before as ISO 8601 strings, e.g. "2025-01-01").
     """
+    from datetime import datetime
+
     top_k = max(1, min(top_k, 100))
     logger.info(
         "tool_invoked", tool="search_memory", query_length=len(query), top_k=top_k
     )
-    results = await _svc().search(query, top_k, repo=repo, agent_id=agent_id)
+    after_dt = datetime.fromisoformat(after) if after else None
+    before_dt = datetime.fromisoformat(before) if before else None
+    results = await _svc().search(
+        query,
+        top_k,
+        repo=repo,
+        agent_id=agent_id,
+        after=after_dt,
+        before=before_dt,
+    )
     return [
         {
             "id": r.id,
@@ -225,6 +239,22 @@ async def list_stale(
     limit = max(1, min(limit, 100))
     logger.info("tool_invoked", tool="list_stale", limit=limit)
     return await _svc().identify_stale(repo=repo, limit=limit)
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, openWorldHint=False
+    ),
+)
+async def get_lineage(id: str) -> list[dict]:
+    """Trace the supersedes chain for a memory in both directions.
+
+    Returns the full history: predecessors (what this memory replaced)
+    and successors (what replaced this memory), ordered oldest to newest.
+    Useful for understanding how a decision evolved over time.
+    """
+    logger.info("tool_invoked", tool="get_lineage", id=id)
+    return await _svc().get_lineage(id)
 
 
 _SEED_WORKFLOW = (Path(__file__).parent / "skills" / "seed" / "SKILL.md").read_text()
