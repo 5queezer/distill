@@ -415,10 +415,11 @@ class PostgresStore:
     async def get_lineage(self, memory_id: str) -> list[dict]:
         """Return the supersedes chain for a memory (both directions)."""
         pool = await self._ensure_pool()
-        chain: list[dict] = []
 
         async with pool.acquire() as conn:
-            # Walk backwards: find predecessors
+            # Walk backwards: collect predecessors (oldest first via reverse)
+            predecessors: list[dict] = []
+            seen: set[str] = {memory_id}
             current = memory_id
             while True:
                 row = await conn.fetchrow(
@@ -427,47 +428,27 @@ class PostgresStore:
                 if not row or not row["supersedes"]:
                     break
                 pred_id = row["supersedes"]
+                if pred_id in seen:
+                    break
+                seen.add(pred_id)
                 pred_row = await conn.fetchrow(
                     "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
                     pred_id,
                 )
                 if not pred_row:
                     break
-                chain.insert(
-                    0,
-                    {
-                        "id": pred_row["id"],
-                        "snippet": pred_row["content"][:80],
-                        "created_at": pred_row["created_at"].isoformat()
-                        if pred_row["created_at"]
-                        else None,
-                        "deleted_at": pred_row["deleted_at"].isoformat()
-                        if pred_row["deleted_at"]
-                        else None,
-                        "direction": "predecessor",
-                    },
-                )
+                predecessors.append(self._lineage_entry(pred_row, "predecessor"))
                 current = pred_id
+            predecessors.reverse()
 
             # Add the target memory itself
+            chain = predecessors
             target_row = await conn.fetchrow(
                 "SELECT id, content, created_at, deleted_at FROM memories WHERE id = $1",
                 memory_id,
             )
             if target_row:
-                chain.append(
-                    {
-                        "id": target_row["id"],
-                        "snippet": target_row["content"][:80],
-                        "created_at": target_row["created_at"].isoformat()
-                        if target_row["created_at"]
-                        else None,
-                        "deleted_at": target_row["deleted_at"].isoformat()
-                        if target_row["deleted_at"]
-                        else None,
-                        "direction": "self",
-                    },
-                )
+                chain.append(self._lineage_entry(target_row, "self"))
 
             # Walk forward: find successors
             current = memory_id
@@ -476,24 +457,27 @@ class PostgresStore:
                     "SELECT id, content, created_at, deleted_at FROM memories WHERE supersedes = $1",
                     current,
                 )
-                if not row:
+                if not row or row["id"] in seen:
                     break
-                chain.append(
-                    {
-                        "id": row["id"],
-                        "snippet": row["content"][:80],
-                        "created_at": row["created_at"].isoformat()
-                        if row["created_at"]
-                        else None,
-                        "deleted_at": row["deleted_at"].isoformat()
-                        if row["deleted_at"]
-                        else None,
-                        "direction": "successor",
-                    },
-                )
+                seen.add(row["id"])
+                chain.append(self._lineage_entry(row, "successor"))
                 current = row["id"]
 
         return chain
+
+    @staticmethod
+    def _lineage_entry(row: asyncpg.Record, direction: str) -> dict:
+        content = row["content"]
+        snippet = content[:80] + ("..." if len(content) > 80 else "")
+        created = row["created_at"]
+        deleted = row["deleted_at"]
+        return {
+            "id": row["id"],
+            "snippet": snippet,
+            "created_at": created.isoformat() if created else None,
+            "deleted_at": deleted.isoformat() if deleted else None,
+            "direction": direction,
+        }
 
     async def purge_expired(self, retention_days: int) -> int:
         """Hard-delete memories soft-deleted more than retention_days ago."""

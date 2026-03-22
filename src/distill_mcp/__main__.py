@@ -232,14 +232,15 @@ def _run_server() -> None:
         """Start ingest HTTP server + worker, then run MCP stdio server."""
         observe_dir.mkdir(parents=True, exist_ok=True)
         await _validate_embedding_dim()
-        await _purge_expired_memories()
         runner = web.AppRunner(ingest_app)
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", settings.ingest_port)
         await site.start()
         logger.info("ingest_server_started", port=settings.ingest_port)
         worker_task = asyncio.create_task(worker.run_forever())
+        purge_task = asyncio.create_task(_purge_expired_memories())
         await mcp.run_stdio_async()
+        purge_task.cancel()
         worker_task.cancel()
 
     asyncio.run(_run_all())

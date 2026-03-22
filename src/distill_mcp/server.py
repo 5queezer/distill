@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -68,7 +69,6 @@ async def search_memory(
     Optionally filter by repo name, agent_id, and/or date range
     (after/before as ISO 8601 strings, e.g. "2025-01-01").
     """
-    from datetime import datetime
 
     top_k = max(1, min(top_k, 100))
     logger.info(

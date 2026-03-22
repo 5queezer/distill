@@ -68,41 +68,39 @@ class FakeStorage:
 
     async def get_lineage(self, memory_id: str) -> list[dict]:
         """Fake implementation that mirrors the real logic."""
-        chain: list[dict] = []
+        seen: set[str] = {memory_id}
+
+        def _entry(mem: Memory, direction: str) -> dict:
+            content = mem.content
+            snippet = content[:80] + ("..." if len(content) > 80 else "")
+            return {
+                "id": mem.id,
+                "snippet": snippet,
+                "created_at": mem.created_at.isoformat(),
+                "deleted_at": None,
+                "direction": direction,
+            }
 
         # Walk backwards
+        predecessors: list[dict] = []
         current = memory_id
         while True:
             sup = self._supersedes.get(current)
-            if not sup:
+            if not sup or sup in seen:
                 break
+            seen.add(sup)
             mem = self._memories.get(sup)
             if not mem:
                 break
-            chain.insert(
-                0,
-                {
-                    "id": mem.id,
-                    "snippet": mem.content[:80],
-                    "created_at": mem.created_at.isoformat(),
-                    "deleted_at": None,
-                    "direction": "predecessor",
-                },
-            )
+            predecessors.append(_entry(mem, "predecessor"))
             current = sup
+        predecessors.reverse()
 
         # Self
+        chain = predecessors
         target = self._memories.get(memory_id)
         if target:
-            chain.append(
-                {
-                    "id": target.id,
-                    "snippet": target.content[:80],
-                    "created_at": target.created_at.isoformat(),
-                    "deleted_at": None,
-                    "direction": "self",
-                }
-            )
+            chain.append(_entry(target, "self"))
 
         # Walk forward
         current = memory_id
@@ -112,18 +110,11 @@ class FakeStorage:
                 if sup == current:
                     successor = mid
                     break
-            if not successor:
+            if not successor or successor in seen:
                 break
+            seen.add(successor)
             mem = self._memories[successor]
-            chain.append(
-                {
-                    "id": mem.id,
-                    "snippet": mem.content[:80],
-                    "created_at": mem.created_at.isoformat(),
-                    "deleted_at": None,
-                    "direction": "successor",
-                }
-            )
+            chain.append(_entry(mem, "successor"))
             current = successor
 
         return chain

@@ -340,9 +340,9 @@ class SqliteStore:
         if self._conn is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
 
-        chain: list[dict] = []
-
-        # Walk backwards: find predecessors (what this memory superseded)
+        # Walk backwards: collect predecessors (oldest first via reverse)
+        predecessors: list[dict] = []
+        seen: set[str] = {memory_id}
         current = memory_id
         while True:
             row = self._conn.execute(
@@ -351,61 +351,54 @@ class SqliteStore:
             if not row or not row["supersedes"]:
                 break
             pred_id = row["supersedes"]
+            if pred_id in seen:
+                break
+            seen.add(pred_id)
             pred_row = self._conn.execute(
                 "SELECT id, content, created_at, deleted_at FROM memories WHERE id = ?",
                 (pred_id,),
             ).fetchone()
             if not pred_row:
                 break
-            chain.insert(
-                0,
-                {
-                    "id": pred_row["id"],
-                    "snippet": pred_row["content"][:80],
-                    "created_at": pred_row["created_at"],
-                    "deleted_at": pred_row["deleted_at"],
-                    "direction": "predecessor",
-                },
-            )
+            predecessors.append(self._lineage_entry(pred_row, "predecessor"))
             current = pred_id
+        predecessors.reverse()
 
         # Add the target memory itself
+        chain = predecessors
         target_row = self._conn.execute(
             "SELECT id, content, created_at, deleted_at FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
         if target_row:
-            chain.append(
-                {
-                    "id": target_row["id"],
-                    "snippet": target_row["content"][:80],
-                    "created_at": target_row["created_at"],
-                    "deleted_at": target_row["deleted_at"],
-                    "direction": "self",
-                },
-            )
+            chain.append(self._lineage_entry(target_row, "self"))
 
-        # Walk forward: find successors (what superseded this memory)
+        # Walk forward: find successors
         current = memory_id
         while True:
             row = self._conn.execute(
                 "SELECT id, content, created_at, deleted_at FROM memories WHERE supersedes = ?",
                 (current,),
             ).fetchone()
-            if not row:
+            if not row or row["id"] in seen:
                 break
-            chain.append(
-                {
-                    "id": row["id"],
-                    "snippet": row["content"][:80],
-                    "created_at": row["created_at"],
-                    "deleted_at": row["deleted_at"],
-                    "direction": "successor",
-                },
-            )
+            seen.add(row["id"])
+            chain.append(self._lineage_entry(row, "successor"))
             current = row["id"]
 
         return chain
+
+    @staticmethod
+    def _lineage_entry(row: sqlite3.Row, direction: str) -> dict:
+        content = row["content"]
+        snippet = content[:80] + ("..." if len(content) > 80 else "")
+        return {
+            "id": row["id"],
+            "snippet": snippet,
+            "created_at": row["created_at"],
+            "deleted_at": row["deleted_at"],
+            "direction": direction,
+        }
 
     async def purge_expired(self, retention_days: int) -> int:
         """Hard-delete memories soft-deleted more than retention_days ago."""
