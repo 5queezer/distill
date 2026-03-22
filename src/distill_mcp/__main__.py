@@ -315,17 +315,32 @@ def _run_seed(since: str | None = None, port: int | None = None) -> None:
     ingest_port = port or settings.ingest_port
     base_url = f"http://127.0.0.1:{ingest_port}/observe"
 
-    # Must be in a git repo
+    # Must be in a git repo — derive name from remote origin (worktree-safe)
     try:
-        repo_name = subprocess.check_output(
+        subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("Error: not inside a git repository.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        origin_url = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        repo_name = origin_url.rsplit("/", 1)[-1].removesuffix(".git")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # No remote — fall back to toplevel directory name
+        toplevel = subprocess.check_output(
             ["git", "rev-parse", "--show-toplevel"],
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
-        repo_name = repo_name.rsplit("/", 1)[-1]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("Error: not inside a git repository.", file=sys.stderr)
-        sys.exit(1)
+        repo_name = toplevel.rsplit("/", 1)[-1]
 
     # Build git log command
     git_cmd = ["git", "log", "--reverse", "--format=%H%x00%aI%x00%s"]

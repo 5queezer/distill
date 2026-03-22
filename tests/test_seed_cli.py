@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import ClassVar
@@ -49,19 +50,37 @@ GIT_LOG = (
 )
 
 
-def test_seed_posts_non_trivial_commits(ingest_server):
-    port, received = ingest_server
+def _make_git_mock(
+    *,
+    toplevel="/home/user/my-repo",
+    origin="git@github.com:user/my-repo.git",
+    log=GIT_LOG,
+    stat=" file.py | 1 +\n",
+):
+    """Return a fake subprocess.check_output that handles git subcommands."""
 
-    def fake_check_output(cmd, *, text=False, stderr=None):
-        if cmd[1] == "rev-parse":
-            return "/home/user/my-repo\n"
-        if cmd[1] == "log":
-            return GIT_LOG
-        if cmd[1] == "show":
-            return " server.py | 10 +++++++---\n"
+    def fake(cmd, *, text=False, stderr=None):
+        sub = cmd[1]
+        if sub == "rev-parse":
+            return f"{toplevel}\n"
+        if sub == "remote":
+            if origin is None:
+                raise subprocess.CalledProcessError(1, cmd)
+            return f"{origin}\n"
+        if sub == "log":
+            return log
+        if sub == "show":
+            return stat
         raise ValueError(f"unexpected git command: {cmd}")
 
-    with patch("subprocess.check_output", side_effect=fake_check_output):
+    return fake
+
+
+def test_seed_posts_non_trivial_commits(ingest_server):
+    port, received = ingest_server
+    mock = _make_git_mock(log=GIT_LOG, stat=" server.py | 10 +++++++---\n")
+
+    with patch("subprocess.check_output", side_effect=mock):
         _run_seed(port=port)
 
     # "chore: fix lint" should be skipped; the other two should be posted
@@ -74,34 +93,22 @@ def test_seed_posts_non_trivial_commits(ingest_server):
 
 def test_seed_skips_merge_commits(ingest_server):
     port, received = ingest_server
-
     log = "ddd3333333\x002024-07-01T10:00:00+00:00\x00Merge pull request #42\n"
+    mock = _make_git_mock(log=log)
 
-    def fake_check_output(cmd, *, text=False, stderr=None):
-        if cmd[1] == "rev-parse":
-            return "/tmp/repo\n"
-        if cmd[1] == "log":
-            return log
-        raise ValueError(f"unexpected: {cmd}")
-
-    with patch("subprocess.check_output", side_effect=fake_check_output):
+    with patch("subprocess.check_output", side_effect=mock):
         _run_seed(port=port)
 
     assert len(received) == 0
 
 
 def test_seed_exits_when_server_unreachable():
-    def fake_check_output(cmd, *, text=False, stderr=None):
-        if cmd[1] == "rev-parse":
-            return "/tmp/repo\n"
-        if cmd[1] == "log":
-            return "aaa\x002024-01-01T00:00:00+00:00\x00feat: something\n"
-        if cmd[1] == "show":
-            return ""
-        raise ValueError(f"unexpected: {cmd}")
+    mock = _make_git_mock(
+        log="aaa\x002024-01-01T00:00:00+00:00\x00feat: something\n", stat=""
+    )
 
     with (
-        patch("subprocess.check_output", side_effect=fake_check_output),
+        patch("subprocess.check_output", side_effect=mock),
         pytest.raises(SystemExit) as exc_info,
     ):
         _run_seed(port=1)  # port 1 is unreachable
@@ -111,21 +118,50 @@ def test_seed_exits_when_server_unreachable():
 
 def test_seed_since_flag(ingest_server):
     port, received = ingest_server
-
     captured_cmds: list[list[str]] = []
 
-    def fake_check_output(cmd, *, text=False, stderr=None):
-        captured_cmds.append(list(cmd))
-        if cmd[1] == "rev-parse":
-            return "/tmp/repo\n"
-        if cmd[1] == "log":
-            return ""
-        if cmd[1] == "show":
-            return ""
-        raise ValueError(f"unexpected: {cmd}")
+    base_mock = _make_git_mock(log="")
 
-    with patch("subprocess.check_output", side_effect=fake_check_output):
+    def capturing_mock(cmd, *, text=False, stderr=None):
+        captured_cmds.append(list(cmd))
+        return base_mock(cmd, text=text, stderr=stderr)
+
+    with patch("subprocess.check_output", side_effect=capturing_mock):
         _run_seed(since="2024-06-01", port=port)
 
     log_cmd = next(c for c in captured_cmds if c[1] == "log")
     assert "--since=2024-06-01" in log_cmd
+
+
+def test_seed_uses_origin_for_repo_name(ingest_server):
+    port, received = ingest_server
+    log = "eee\x002024-08-01T00:00:00+00:00\x00feat: init\n"
+    mock = _make_git_mock(
+        toplevel="/tmp/some-worktree",
+        origin="git@github.com:org/actual-repo.git",
+        log=log,
+        stat="",
+    )
+
+    with patch("subprocess.check_output", side_effect=mock):
+        _run_seed(port=port)
+
+    assert len(received) == 1
+    assert "actual-repo@" in received[0]["input"]
+
+
+def test_seed_falls_back_to_toplevel_without_remote(ingest_server):
+    port, received = ingest_server
+    log = "fff\x002024-09-01T00:00:00+00:00\x00feat: local only\n"
+    mock = _make_git_mock(
+        toplevel="/home/user/local-project",
+        origin=None,
+        log=log,
+        stat="",
+    )
+
+    with patch("subprocess.check_output", side_effect=mock):
+        _run_seed(port=port)
+
+    assert len(received) == 1
+    assert "local-project@" in received[0]["input"]
