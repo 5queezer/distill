@@ -176,9 +176,38 @@ def _run_server() -> None:
 
     ingest_app = create_ingest_app(observe_jsonl, wake_event)
 
+    async def _validate_embedding_dim() -> None:
+        """Check that current embedding model matches stored vector dimensions."""
+        stored_dim = store.get_vector_dimension()
+        if stored_dim is None:
+            return
+        stored_model, _ = await store.get_embedding_meta()
+        if stored_model == embedding_model:
+            logger.info(
+                "embedding_dim_validated", model=embedding_model, dim=stored_dim
+            )
+            return
+        try:
+            test_vec = await embedder.embed("dimension check")
+        except RuntimeError:
+            logger.warning("embedding_dim_check_skipped", reason="embedder unreachable")
+            return
+        current_dim = len(test_vec)
+        if current_dim != stored_dim:
+            raise RuntimeError(
+                f"Embedding dimension mismatch: stored vectors have {stored_dim} "
+                f"dimensions (model: {stored_model or 'unknown'}) but current model "
+                f"'{embedding_model}' produces {current_dim} dimensions. "
+                f"Delete the vector store and restart to re-embed all memories, "
+                f"or switch back to the original embedding model."
+            )
+        await store.save_embedding_meta(embedding_model, current_dim)
+        logger.info("embedding_dim_validated", model=embedding_model, dim=current_dim)
+
     async def _run_all() -> None:
         """Start ingest HTTP server + worker, then run MCP stdio server."""
         observe_dir.mkdir(parents=True, exist_ok=True)
+        await _validate_embedding_dim()
         runner = web.AppRunner(ingest_app)
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", settings.ingest_port)

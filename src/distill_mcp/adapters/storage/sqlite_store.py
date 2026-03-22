@@ -37,6 +37,7 @@ class SqliteStore:
         self._conn: sqlite3.Connection | None = None
         self._lance: lancedb.DBConnection | None = None
         self._rrf_k = rrf_k
+        self._stored_vec_dim: int | None = None
 
     def initialize(self) -> None:
         """Create tables. Must be called before any other method."""
@@ -49,17 +50,50 @@ class SqliteStore:
         self._migrate_lance()
 
     def _migrate_lance(self) -> None:
-        """Add columns missing from older LanceDB vectors tables."""
+        """Add columns missing from older LanceDB vectors tables and read vector dim."""
         if self._lance is None:
             raise RuntimeError("SQLiteStore not initialized — call initialize() first")
         if "vectors" not in self._lance.list_tables().tables:
             return
+        import pyarrow as pa
+
         table = self._lance.open_table("vectors")
+
         existing = {f.name for f in table.schema}
         if "agent_id" not in existing:
-            import pyarrow as pa
-
             table.add_columns(pa.field("agent_id", pa.string()))
+
+        for i in range(len(table.schema)):
+            field = table.schema.field(i)
+            if field.name == "vector" and isinstance(field.type, pa.FixedSizeListType):
+                self._stored_vec_dim = field.type.list_size
+                break
+
+    def get_vector_dimension(self) -> int | None:
+        """Return the dimension of stored vectors, or None if no vectors exist."""
+        return self._stored_vec_dim
+
+    async def get_embedding_meta(self) -> tuple[str | None, int | None]:
+        """Return (model_name, dimension) from stored metadata."""
+        if self._conn is None:
+            return None, None
+        rows = self._conn.execute(
+            "SELECT key, value FROM db_meta WHERE key IN ('embedding_model', 'embedding_dim')"
+        ).fetchall()
+        meta = {r["key"]: r["value"] for r in rows}
+        model = meta.get("embedding_model")
+        dim = int(meta["embedding_dim"]) if "embedding_dim" in meta else None
+        return model, dim
+
+    async def save_embedding_meta(self, model: str, dim: int) -> None:
+        """Store embedding model name and dimension."""
+        if self._conn is None:
+            raise RuntimeError("SQLiteStore not initialized — call initialize() first")
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)",
+            [("embedding_model", model), ("embedding_dim", str(dim))],
+        )
+        self._conn.commit()
 
     def _create_tables(self) -> None:
         if self._conn is None:
@@ -85,6 +119,12 @@ class SqliteStore:
         c.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
             USING fts5(id UNINDEXED, content, tags, tokenize='unicode61')
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS db_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
         """)
         c.commit()
         self._migrate(c)
@@ -143,6 +183,7 @@ class SqliteStore:
             self._lance.open_table("vectors").add(data)
         else:
             self._lance.create_table("vectors", data)
+            self._stored_vec_dim = len(vec)
 
         return memory.id
 
