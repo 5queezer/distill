@@ -8,14 +8,13 @@ from fastmcp import FastMCP
 mcp = FastMCP("distill")
 
 @mcp.tool
-def remember(content: str, type: str, repos: list[str], tags: list[str] | None = None) -> dict:
-    """Distill raw input into anonymous team knowledge and store it.
+async def search_memory(query: str, top_k: int = 5, repo: str | None = None) -> list[dict]:
+    """Search team knowledge before proposing architecture or answering questions.
 
-    The raw text is processed locally by Ollama and never leaves your device.
-    Only the distilled factual output is stored in the team database.
+    Returns compact index (~30 tokens/result). Use get_memories for full content.
     """
     # delegate to domain service
-    return service.remember(content, type, repos, tags)
+    return await service.search(query, top_k, repo=repo)
 ```
 
 **FastMCP rules:**
