@@ -54,7 +54,7 @@ def _run_server() -> None:
     # Provider defaults — used when EMBEDDING_MODEL / LLM_MODEL not set
     _embedding_defaults = {
         "ollama": "nomic-embed-text",
-        "gemini": "text-embedding-004",
+        "gemini": "gemini-embedding-001",
         "vertex": "text-embedding-005",
         "bedrock": "amazon.titan-embed-text-v2:0",
         "azure": "text-embedding-3-small",
