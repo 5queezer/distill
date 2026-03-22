@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 
 CREATE INDEX IF NOT EXISTS memories_tsv_idx ON memories USING GIN(content_tsv);
+
+CREATE TABLE IF NOT EXISTS db_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # ivfflat needs rows to exist before building; created lazily
@@ -196,6 +201,39 @@ class PostgresStore:
         if self._pool:
             await self._pool.close()
             self._pool = None
+
+    def get_vector_dimension(self) -> int:
+        """Return the vector dimension from the schema (hardcoded 768 for pgvector)."""
+        return 768
+
+    async def get_embedding_meta(self) -> tuple[str | None, int | None]:
+        """Return (model_name, dimension) from stored metadata."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            model_row = await conn.fetchrow(
+                "SELECT value FROM db_meta WHERE key = 'embedding_model'"
+            )
+            dim_row = await conn.fetchrow(
+                "SELECT value FROM db_meta WHERE key = 'embedding_dim'"
+            )
+        model = model_row["value"] if model_row else None
+        dim = int(dim_row["value"]) if dim_row else None
+        return model, dim
+
+    async def save_embedding_meta(self, model: str, dim: int) -> None:
+        """Store embedding model name and dimension."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO db_meta (key, value) VALUES ('embedding_model', $1) "
+                "ON CONFLICT (key) DO UPDATE SET value = $1",
+                model,
+            )
+            await conn.execute(
+                "INSERT INTO db_meta (key, value) VALUES ('embedding_dim', $1) "
+                "ON CONFLICT (key) DO UPDATE SET value = $1",
+                str(dim),
+            )
 
     # -- StoragePort implementation --
 
