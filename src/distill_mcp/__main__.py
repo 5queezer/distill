@@ -296,11 +296,146 @@ def _export_memories(
         print(text)
 
 
-def _print_seed_workflow() -> None:
-    from pathlib import Path
+def _run_seed(since: str | None = None, port: int | None = None) -> None:
+    """Seed the knowledge base from git history.
 
-    skill_path = Path(__file__).parent / "skills" / "seed" / "SKILL.md"
-    print(skill_path.read_text())
+    Reads git log, filters trivial commits, and POSTs each to the
+    ingest endpoint for distillation by the background worker.
+    Requires the distill MCP server to be running.
+    """
+    import json
+    import re
+    import subprocess
+    import sys
+    import urllib.error
+    import urllib.request
+
+    from distill_mcp.settings import settings
+
+    ingest_port = port or settings.ingest_port
+    base_url = f"http://127.0.0.1:{ingest_port}/observe"
+
+    # Must be in a git repo — derive name from remote origin (worktree-safe)
+    try:
+        subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("Error: not inside a git repository.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        origin_url = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        repo_name = origin_url.rsplit("/", 1)[-1].removesuffix(".git")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # No remote — fall back to toplevel directory name
+        toplevel = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        repo_name = toplevel.rsplit("/", 1)[-1]
+
+    # Build git log command
+    git_cmd = ["git", "log", "--reverse", "--format=%H%x00%aI%x00%s"]
+    if since:
+        git_cmd.append(f"--since={since}")
+
+    try:
+        log_output = subprocess.check_output(git_cmd, text=True).strip()
+    except subprocess.CalledProcessError as exc:
+        print(f"Error reading git log: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not log_output:
+        print("No commits found.", file=sys.stderr)
+        return
+
+    commits = log_output.splitlines()
+
+    # Filter patterns for trivial commits
+    skip_re = re.compile(
+        r"^(chore|style|ci)(\(.+\))?:\s|^Merge\s|^fixup!|^squash!",
+        re.IGNORECASE,
+    )
+
+    posted = 0
+    skipped = 0
+    errors = 0
+
+    for line in commits:
+        parts = line.split("\x00", 2)
+        if len(parts) != 3:
+            continue
+        sha, date, subject = parts
+
+        if skip_re.match(subject):
+            skipped += 1
+            continue
+
+        # For short subjects, include the diffstat for context
+        body = f"[{date}] {subject}"
+        if len(subject) < 72:
+            try:
+                stat = subprocess.check_output(
+                    ["git", "show", "--stat", "--format=", sha],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+                if stat:
+                    body += f"\n\nFiles changed:\n{stat}"
+            except subprocess.CalledProcessError:
+                pass
+
+        payload = json.dumps(
+            {
+                "tool_name": "seed",
+                "input": f"{repo_name}@{sha[:10]}",
+                "output": body,
+            }
+        ).encode()
+
+        req = urllib.request.Request(
+            base_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 202:
+                    posted += 1
+                else:
+                    errors += 1
+                    print(
+                        f"  Unexpected status {resp.status} for {sha[:10]}",
+                        file=sys.stderr,
+                    )
+        except urllib.error.URLError as exc:
+            errors += 1
+            if posted == 0 and errors == 1:
+                print(
+                    f"Error: cannot reach ingest endpoint at {base_url}\n"
+                    "Is the distill MCP server running?",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(f"  Failed to post {sha[:10]}: {exc}", file=sys.stderr)
+
+        if posted % 10 == 0 and posted > 0:
+            print(f"  … {posted} commits posted", file=sys.stderr)
+
+    print(
+        f"Seed complete: {posted} posted, {skipped} skipped, {errors} errors "
+        f"(from {len(commits)} commits in {repo_name})",
+        file=sys.stderr,
+    )
 
 
 def main() -> None:
@@ -315,7 +450,21 @@ def main() -> None:
             print(format_report(info))
             return
         if cmd == "seed":
-            _print_seed_workflow()
+            seed_args = sys.argv[2:]
+            since = None
+            seed_port = None
+            i = 0
+            while i < len(seed_args):
+                if seed_args[i] == "--since" and i + 1 < len(seed_args):
+                    since = seed_args[i + 1]
+                    i += 2
+                elif seed_args[i] == "--port" and i + 1 < len(seed_args):
+                    seed_port = int(seed_args[i + 1])
+                    i += 2
+                else:
+                    print(f"Unknown argument: {seed_args[i]}", file=sys.stderr)
+                    sys.exit(1)
+            _run_seed(since=since, port=seed_port)
             return
         if cmd == "export":
             args = sys.argv[2:]
