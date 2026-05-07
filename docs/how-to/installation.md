@@ -36,7 +36,7 @@ ollama pull nomic-embed-text   # embeddings (768-dim vectors for search)
 You can override these with environment variables:
 
 ```bash
-export DISTILL_MODEL=gemma3:4b          # any Ollama model
+export LLM_MODEL=gemma3:4b              # any Ollama model
 export EMBEDDING_MODEL=nomic-embed-text # must produce 768-dim vectors
 ```
 

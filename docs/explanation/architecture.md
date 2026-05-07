@@ -16,7 +16,7 @@ graph TB
     end
 
     subgraph "Server Layer"
-        SRV["server.py — 7 MCP tools"]
+        SRV["server.py — 8 MCP tools"]
         ING["ingest.py — HTTP /observe endpoint"]
         WRK["worker.py — background distillation"]
         MAIN["__main__.py — wiring & startup"]
@@ -78,10 +78,14 @@ src/distill_mcp/
 │   ├── embeddings/
 │   │   ├── ollama_embed.py    # EmbeddingPort → local Ollama
 │   │   ├── vertex_embed.py    # EmbeddingPort → Vertex AI
-│   │   └── gemini_embed.py    # EmbeddingPort → Gemini API
+│   │   ├── gemini_embed.py    # EmbeddingPort → Gemini API
+│   │   ├── bedrock_embed.py   # EmbeddingPort → AWS Bedrock
+│   │   └── azure_embed.py     # EmbeddingPort → Azure OpenAI
 │   ├── distiller/
 │   │   ├── ollama_distill.py  # DistillerPort → local Ollama
 │   │   └── gemini_distill.py  # DistillerPort → Gemini API
+│   ├── identity/
+│   │   └── git_identity.py    # Git-based identity resolution (AUTH_ENABLED)
 │   ├── scanner/
 │   │   └── secret_scanner.py  # ScannerPort → secrets + PII redaction
 │   └── reranker/
@@ -90,6 +94,8 @@ src/distill_mcp/
 ├── server.py            # FastMCP tool definitions — thin adapter
 ├── ingest.py            # HTTP /observe endpoint (localhost)
 ├── worker.py            # Background distillation consumer
+├── dedup.py             # Cosine similarity > 0.95 check
+├── hardware.py          # GPU/hardware detection for check-hardware CLI
 ├── settings.py          # pydantic-settings, env var loading
 └── __main__.py          # Entry point: wires adapters, starts FastMCP + ingest + worker
 ```

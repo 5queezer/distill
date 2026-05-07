@@ -60,6 +60,7 @@ nav:
     - Gemini Backend: how-to/gemini-backend.md
   - Reference:
     - MCP Tools: reference/tools.md
+    - CLI Commands: reference/cli.md
     - Configuration: reference/configuration.md
   - Explanation:
     - How Memory Works: explanation/how-memory-works.md

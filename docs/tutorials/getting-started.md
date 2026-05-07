@@ -47,23 +47,33 @@ Or if running from source:
 claude mcp add distill -- uv run python -m distill_mcp
 ```
 
-## Step 4: Store your first memory
+## Step 4: Set up the auto-observe hook
 
-Open Claude Code and say:
+Distill captures knowledge automatically from your Claude Code tool calls. Add the PostToolUse hook to your Claude Code settings:
+
+```bash
+claude hooks add PostToolUse \
+  'curl -s -X POST http://127.0.0.1:21746/observe \
+    -H "Content-Type: application/json" \
+    -d @- <<< "$CLAUDE_HOOK_PAYLOAD" &'
+```
+
+Now every tool call (Read, Bash, Edit, etc.) is automatically captured in the background — zero latency impact on Claude.
+
+## Step 5: Use Claude Code normally
+
+There's nothing special to do. Work as you normally would:
 
 ```
-You:    "Remember that we chose gRPC over REST for inter-service
-         communication because of streaming support and type safety."
+You:    "Let's use gRPC instead of REST for inter-service communication
+         because of streaming support and type safety."
+
+Claude: [edits code, runs tests, etc.]
 ```
 
-Claude will:
+Behind the scenes, Distill's background worker distills each tool call into anonymous, factual knowledge and stores it in the team database.
 
-1. Send the raw text to your **local** Ollama for distillation
-2. Show you the distilled preview (e.g., *"gRPC was chosen over REST for inter-service communication due to streaming support and type safety."*)
-3. Wait for your approval
-4. Store the approved fact in the team database
-
-## Step 5: Search your memories
+## Step 6: Search your memories
 
 ```
 You:    "How do our services communicate?"
@@ -77,7 +87,7 @@ Claude: [searches team memory]
 
 - How to install Distill and its Ollama dependencies
 - How to register the MCP server with Claude Code
-- The two-phase remember flow: distill → preview → confirm
+- How to set up the auto-observe hook for automatic knowledge capture
 - How search retrieves stored team knowledge
 
 ## Next steps

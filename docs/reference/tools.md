@@ -4,7 +4,7 @@ title: MCP Tools
 
 # MCP Tools Reference
 
-Distill exposes 7 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
+Distill exposes 8 tools via the MCP protocol. Claude Code calls these automatically based on conversation context.
 
 Memories are captured automatically via the [auto-observe pipeline](../explanation/how-memory-works.md) — there is no explicit "remember" tool. The tools below are for **reading, searching, and managing** existing memories.
 
@@ -18,8 +18,10 @@ Hybrid search combining full-text (FTS5/tsvector) and vector similarity (LanceDB
 | `top_k` | int | no | Max results (default: 5, max: 100) |
 | `repo` | string | no | Filter by repository |
 | `agent_id` | string | no | Filter by agent |
+| `after` | string | no | Only return memories created after this date (ISO 8601, e.g. `"2025-01-01"`) |
+| `before` | string | no | Only return memories created before this date (ISO 8601, e.g. `"2025-06-01"`) |
 
-**Returns:** Compact index (~30 tokens/result) with `id`, `type`, `snippet`, `score`, `est_tokens`, `level`. Use `get_memories` to fetch full content for relevant results.
+**Returns:** Compact index (~30 tokens/result) with `id`, `type`, `level`, `snippet`, `repos`, `score`, `created_at`, `est_tokens`, `agent_id`. Use `get_memories` to fetch full content for relevant results.
 
 ## get_memories
 
@@ -81,3 +83,13 @@ Soft-delete a memory. It will no longer appear in search results.
 |-----------|------|----------|-------------|
 | `id` | string | yes | Memory ID to delete |
 | `agent_id` | string | no | If provided, only deletes if the memory belongs to this agent |
+
+## get_lineage
+
+Trace the supersedes chain for a memory in both directions. Returns the full history: predecessors (what this memory replaced) and successors (what replaced this memory), ordered oldest to newest. Useful for understanding how a decision evolved over time.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | yes | Memory ID to trace |
+
+**Returns:** List of memory dicts in the supersedes chain, ordered oldest to newest.
